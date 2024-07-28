@@ -7,7 +7,7 @@ The modern way to build emails services with Rust
 * Easy and Fast to implement
 * Built on top of Tokio
 * Customization
-* Like build a HTTP api
+* Like build a HTTP API
 * Open Source
 
 ## Examples
@@ -15,7 +15,15 @@ The modern way to build emails services with Rust
 ```rust
 use std::{net::SocketAddr, sync::Arc};
 
-use neo_email::{connection::SMTPConnection, controllers::{on_auth::OnAuthController, on_email::OnEmailController}, headers::EmailHeaders, mail::Mail, message::Message, server::SMTPServer, status_code::StatusCodes};
+use neo_email::{
+    connection::SMTPConnection,
+    controllers::{on_auth::OnAuthController, on_email::OnEmailController},
+    headers::EmailHeaders,
+    mail::Mail,
+    message::Message,
+    server::SMTPServer,
+    status_code::StatusCodes,
+};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Default)]
@@ -41,51 +49,57 @@ async fn main() {
         // Run the server
         .run()
         .await;
+}
 
-    // This function is called when an authentication is received
-    // What is data?
-    // This send the client: `AUTH PLAIN AHlvdXJfdXNlcm5hbWUAeW91cl9wYXNzd29yZA==`
-    // data is `PLAIN AHlvdXJfdXNlcm5hbWUAeW91cl9wYXNzd29yZA==`, just without the command AUTH, which is stripped by the server, you have to handle the command in your controller
-    // Ok(Message) for successful authentication
-    // Err(Message) for failed authentication and the connection will be closed peacefully
-    pub async fn on_auth(conn: Arc<Mutex<SMTPConnection<ConnectionState>>>, _data: String) -> Result<Message, Message> {
-        let conn = conn.lock().await;
-        let mut state = conn.state.lock().await;
+// This function is called when an authentication is received
+// What is data?
+// This send the client: `AUTH PLAIN AHlvdXJfdXNlcm5hbWUAeW91cl9wYXNzd29yZA==`
+// data is `PLAIN AHlvdXJfdXNlcm5hbWUAeW91cl9wYXNzd29yZA==`, just without the command AUTH, which is stripped by the server, you have to handle the command in your controller
+// Ok(Message) for successful authentication
+// Err(Message) for failed authentication and the connection will be closed peacefully
+pub async fn on_auth(
+    conn: Arc<Mutex<SMTPConnection<ConnectionState>>>,
+    _data: String,
+) -> Result<Message, Message> {
+    let conn = conn.lock().await;
+    let mut state = conn.state.lock().await;
 
-        // Using our custom state
-        state.authenticated = true;
-        // We can also decide to not authenticate the user
+    // Using our custom state
+    state.authenticated = true;
+    // We can also decide to not authenticate the user
 
-        Ok(Message::builder()
-            .status(neo_email::status_code::StatusCodes::AuthenticationSuccessful)
-            .message("Authenticated".to_string())
-            .build())
+    Ok(Message::builder()
+        .status(neo_email::status_code::StatusCodes::AuthenticationSuccessful)
+        .message("Authenticated".to_string())
+        .build())
+}
+
+// This function is called when an email is received
+// The mail is a struct that contains the email data, in this case the raw email data in a Vec<u8>
+// Headers are parsed in a hashmap and the body is a Vec<u8>
+pub async fn on_email(
+    conn: Arc<Mutex<SMTPConnection<ConnectionState>>>,
+    mail: Mail<Vec<u8>>,
+) -> Message {
+    let conn = conn.lock().await;
+    let state = conn.state.lock().await;
+
+    let headers = mail.headers.clone(); // get the hashmap
+    let subject = headers.get(&EmailHeaders::Subject).unwrap(); // get the Option<Subject> header
+    println!("Subject: {:?}", subject);
+
+    // Check if the user is authenticated from state set in on_auth
+    if !state.authenticated {
+        return Message::builder()
+            .status(StatusCodes::AuthenticationCredetialsInvalid)
+            .message("Authentication required".to_string())
+            .build();
     }
 
-    // This function is called when an email is received
-    // The mail is a struct that contains the email data, in this case the raw email data in a Vec<u8>
-    // Headers are parsed in a hashmap and the body is a Vec<u8>
-    pub async fn on_email(conn: Arc<Mutex<SMTPConnection<ConnectionState>>>, mail: Mail<Vec<u8>>) -> Message {
-        let conn = conn.lock().await;
-        let state = conn.state.lock().await;
-
-        let headers = mail.headers.clone(); // get the hashmap
-        let subject = headers.get(&EmailHeaders::Subject).unwrap(); // get the Option<Subject> header 
-        println!("Subject: {:?}", subject);
-
-        // Check if the user is authenticated from state set in on_auth
-        if !state.authenticated {
-            return Message::builder()
-                .status(StatusCodes::AuthenticationCredetialsInvalid)
-                .message("Authentication required".to_string())
-                .build();
-        }
-
-        Message::builder()
-            .status(neo_email::status_code::StatusCodes::OK)
-            .message("Email received".to_string())
-            .build()
-    }
+    Message::builder()
+        .status(neo_email::status_code::StatusCodes::OK)
+        .message("Email received".to_string())
+        .build()
 }
 ```
 
