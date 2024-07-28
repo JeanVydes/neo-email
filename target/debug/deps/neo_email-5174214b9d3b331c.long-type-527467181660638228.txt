@@ -1,1 +1,0 @@
-Arc<(dyn Fn(Arc<tokio::sync::Mutex<SMTPConnection<B>>>, std::string::String) -> Pin<Box<(dyn Future<Output = ()> + Send + 'static)>> + Send + Sync + 'static)>
