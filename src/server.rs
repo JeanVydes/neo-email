@@ -54,6 +54,9 @@ pub struct SMTPServer<B> {
     max_size: usize,
 
     allowed_commands: Vec<Commands>,
+
+    max_session_duration: Duration,
+    max_op_duration: Duration,
 }
 
 /// # Controllers
@@ -117,6 +120,8 @@ impl<B> SMTPServer<B> {
                 Commands::AUTH,
                 Commands::STARTTLS,
             ],
+            max_session_duration: Duration::from_secs(300),
+            max_op_duration: Duration::from_secs(30),
         }
     }
 
@@ -204,6 +209,18 @@ impl<B> SMTPServer<B> {
         self
     }
 
+    pub fn set_max_session_duration(&mut self, duration: Duration) -> &mut Self {
+        log::info!("Setting max session duration to {:?}", duration);
+        self.max_session_duration = duration;
+        self
+    }
+
+    pub fn set_max_op_duration(&mut self, duration: Duration) -> &mut Self {
+        log::info!("Setting max operation duration to {:?}", duration);
+        self.max_op_duration = duration;
+        self
+    }
+
     /// # bind
     ///
     /// This function is responsible for binding the SMTPServer to a specific address.
@@ -261,6 +278,8 @@ impl<B> SMTPServer<B> {
             let controllers = self.controllers.clone();
             let max_size = self.max_size;
             let allowed_commands = self.allowed_commands.clone();
+            let max_session_duration = self.max_session_duration;
+            let max_op_duration = self.max_op_duration;
 
             // Spawn a new task to handle the connection
             tokio::spawn(async move {
@@ -279,19 +298,70 @@ impl<B> SMTPServer<B> {
 
                 if let Some(pool) = pool {
                     pool.install(|| {
-                        tokio::runtime::Runtime::new()
-                            .unwrap()
-                            .block_on(handle_connection(
+                        tokio::runtime::Runtime::new().unwrap().block_on(
+                            handle_connection_with_timeout(
                                 use_tls,
                                 tls_acceptor,
                                 conn,
                                 controllers,
                                 max_size,
                                 allowed_commands,
-                            ));
+                                max_session_duration,
+                                max_op_duration,
+                            ),
+                        );
                     });
                 }
             });
+        }
+    }
+}
+
+/// # handle_connection_with_timeout
+///
+/// This function is responsible for handling the connection with the client, including the TLS handshake, and the SMTP commands, also dispatching the controllers configuring a timeout for session and operation.
+pub async fn handle_connection_with_timeout<B>(
+    use_tls: bool,
+    tls_acceptor: Option<Arc<Mutex<TlsAcceptor>>>,
+    mutex_con: Arc<Mutex<SMTPConnection<B>>>,
+    controllers: Controllers<B>,
+    max_size: usize,
+    allowed_commands: Vec<Commands>,
+    max_session_duration: Duration,
+    max_op_duration: Duration,
+) where
+    B: 'static + Default + Send + Sync + Clone,
+{
+    let mutex_conn_for_handle_connection = mutex_con.clone();
+    match timeout(
+        max_session_duration,
+        handle_connection(
+            use_tls,
+            tls_acceptor,
+            mutex_conn_for_handle_connection,
+            controllers,
+            max_size,
+            allowed_commands,
+            max_op_duration,
+        ),
+    )
+    .await
+    {
+        Ok(_) => (),
+        Err(_) => {
+            let conn = mutex_con.lock().await;
+            let _ = conn
+                .write_socket(
+                    &Message::builder()
+                        .status(StatusCodes::ServiceClosingTransmissionChannel)
+                        .message("Service closing transmission channel".to_string())
+                        .build()
+                        .as_bytes(true),
+                )
+                .await
+                .map_err(|err| log::error!("{}", err));
+
+            let _ = conn.close().await.map_err(|err| log::error!("{}", err));
         }
     }
 }
@@ -306,6 +376,7 @@ pub async fn handle_connection<B>(
     controllers: Controllers<B>,
     max_size: usize,
     allowed_commands: Vec<Commands>,
+    max_op_duration: Duration,
 ) where
     B: 'static + Default + Send + Sync + Clone,
 {
@@ -332,285 +403,26 @@ pub async fn handle_connection<B>(
 
     log::trace!("[] Connection initialized, and start proccessing commands");
     // Start the main loop for reading from the socket
+
     loop {
-        let mut conn = mutex_con.lock().await;
-        let mut buf = [0; 2048];
-
-        // Read from the socket
-        let n = conn.read_socket(&mut buf).await.unwrap_or_else(|err| {
-            log::trace!("[🕵️‍♂️💻] Error reading from socket: {}", err);
-            0
-        });
-
-        // Check if the buffer is empty, if so close the connection
-        if n == 0 {
-            drop(conn);
-            log::trace!("[🖥️🔒] Connection closed by client");
-            break;
-        }
-
-        // Check if the buffer size is greater than 2048, if so reset the buffer
-        if conn.status == SMTPConnectionStatus::WaitingCommand && conn.buffer.len() + n > 2048 {
-            let _ = conn
-                .write_socket(
-                    &Message::builder()
-                        .status(StatusCodes::ExceededStorageAllocation)
-                        .message("Buffer size exceeded, Resetting buffer".to_string())
-                        .build()
-                        .as_bytes(true),
-                )
-                .await
-                .map_err(|err| log::error!("{}", err));
-
-            conn.buffer.clear();
-
-            controllers.on_reset.as_ref().map(|on_reset| {
-                let on_reset = on_reset.0.clone();
-                drop(conn);
-                let _ = on_reset(mutex_con.clone());
-            });
-
-            continue;
-        }
-
-        if conn.status == SMTPConnectionStatus::WaitingData && conn.mail_buffer.len() + n > max_size
-        {
-            let _ = conn
-                .write_socket(
-                    &Message::builder()
-                        .status(StatusCodes::ExceededStorageAllocation)
-                        .message("Buffer size exceeded, Resetting buffer".to_string())
-                        .build()
-                        .as_bytes(true),
-                )
-                .await
-                .map_err(|err| log::error!("{}", err));
-
-            conn.mail_buffer.clear();
-
-            controllers.on_reset.as_ref().map(|on_reset| {
-                let on_reset = on_reset.0.clone();
-                drop(conn);
-                let _ = on_reset(mutex_con.clone());
-            });
-
-            continue;
-        }
-
-        if conn.status == SMTPConnectionStatus::WaitingData {
-            conn.mail_buffer.extend_from_slice(&buf[..n]);
-        } else {
-            conn.buffer.extend_from_slice(&buf[..n]);
-        }
-
-        // Check if the buffer ends with \r\n.\r\n that means that the client has sent the mail data
-        if conn.status == SMTPConnectionStatus::WaitingData
-            && conn.mail_buffer.ends_with(b"\r\n.\r\n")
-        {
-            // Dispatch on_email controller (if exists)
-            if let Some(on_email) = &controllers.on_email {
-                let on_email = on_email.0.clone();
-                let mail = match Mail::<Vec<u8>>::from_bytes(conn.mail_buffer.clone()) {
-                    Ok(mail) => mail,
-                    Err(err) => {
-                        log::error!("{}", err);
-                        continue;
-                    }
-                };
-
-                // Drop conn, to allow lock on_email controller
-                drop(conn);
-                let response = on_email(mutex_con.clone(), Box::new(mail)).await;
-
-                let conn = mutex_con.lock().await;
-                let _ = conn
-                    .write_socket(&response.as_bytes(true))
-                    .await
-                    .map_err(|err| {
-                        log::error!("{}", err);
-                    });
-            } else {
-                let response = Message::builder()
-                    .status(StatusCodes::OK)
-                    .message("Message received".to_string())
-                    .build()
-                    .to_string(true);
-
-                conn.write_socket(response.as_bytes()).await.unwrap();
-            }
-
-            let mut conn = mutex_con.lock().await;
-            // Clear the buffer
-            conn.mail_buffer.clear();
-            conn.buffer.clear();
-            // Set the status to WaitingCommand
-            conn.status = SMTPConnectionStatus::WaitingCommand;
-
-            continue;
-        }
-
-        // Check if the buffer ends with \r\n that means that the client has sent a command
-        if conn.status == SMTPConnectionStatus::WaitingCommand && conn.buffer.ends_with(b"\r\n") {
-            // Parse the buffer into a ClientMessage
-            let mut client_message = match ClientMessage::<String>::from_bytes(conn.buffer.clone())
-            {
-                Ok(msg) => msg,
-                Err(err) => {
-                    match conn
-                        .write_socket(
-                            &Message::builder()
-                                .status(StatusCodes::SyntaxError)
-                                .message(err.to_string())
-                                .build()
-                                .as_bytes(true),
-                        )
-                        .await
-                    {
-                        Ok(_) => (),
-                        Err(err) => {
-                            log::error!("{}", err);
-                            break;
-                        }
-                    }
-
-                    continue;
-                }
-            };
-
-            if client_message.command == Commands::QUIT {
-                break;
-            } else if client_message.command == Commands::RSET {
-                conn.buffer.clear();
-                conn.status = SMTPConnectionStatus::WaitingCommand;
-                controllers.on_reset.as_ref().map(|on_reset| {
-                    let on_reset = on_reset.0.clone();
-                    drop(conn);
-                    let _ = on_reset(mutex_con.clone());
-                });
-                continue;
-            }
-
-            log::trace!("[💬] Received Message: {:?}", client_message);
-
-            // Drop the lock to the connection
-            drop(conn);
-            let (mut response, status) = match handle_command(
+        match timeout(
+            max_op_duration,
+            handle_connection_logic(
+                use_tls,
+                tls_acceptor.clone(),
                 mutex_con.clone(),
                 controllers.clone(),
-                &mut client_message,
-                allowed_commands.clone(),
                 max_size,
-            )
-            .await
-            {
-                Ok((res, status)) => (res, status),
-                Err(err) => {
-                    let conn = mutex_con.lock().await;
-                    let _ = conn
-                        .write_socket(
-                            &Message::builder()
-                                .status(StatusCodes::TransactionFailed)
-                                .message(err.to_string())
-                                .build()
-                                .as_bytes(true),
-                        )
-                        .await
-                        .map_err(|err| log::error!("{}", err));
-
-                    continue;
-                }
-            };
-
-            log::trace!(
-                "[💬] Response for SMTP command {:?} is: {:?}",
-                client_message.command,
-                response
-            );
-
-            // Lock the connection to send the response to the client
-            let mut conn = mutex_con.lock().await;
-
-            // Set the new status
-            conn.status = status;
-
-            // Get the last index of alls messages (because last message is different)
-            let last_index = response.len() - 1;
-            // Get the tls_acceptor to upgrade the connection to TLS (if needed)
-            let tls_acceptor = tls_acceptor.clone();
-
-            // Check if client want to start TLS and if the server supports it
-            if conn.status == SMTPConnectionStatus::StartTLS && use_tls && tls_acceptor.is_some() {
-                // let know the client that we are ready to start TLS
-                match conn
-                    .write_socket(
-                        &Message::builder()
-                            .status(StatusCodes::SMTPServiceReady)
-                            .message("Ready to start TLS".to_string())
-                            .build()
-                            .as_bytes(true),
-                    )
-                    .await
-                {
-                    Ok(_) => (),
-                    Err(err) => {
-                        log::error!("{}", err);
-                        break;
-                    }
-                }
-
-                log::debug!("Upgrading connection to TLS");
-                drop(conn);
-                match upgrade_to_tls(mutex_con.clone(), tls_acceptor).await {
-                    Ok(_) => {
-                        log::debug!("Connection upgraded to TLS");
-
-                        let mut conn = mutex_con.lock().await;
-                        conn.buffer.clear();
-                        conn.status = SMTPConnectionStatus::WaitingCommand;
-
-                        continue;
-                    }
-                    Err(err) => {
-                        log::error!("An error ocurred while trying to upgrade to TLS {}", err);
-
-                        let mut conn = mutex_con.lock().await;
-                        conn.write_socket(
-                            &Message::builder()
-                                .status(StatusCodes::TransactionFailed)
-                                .message("TLS not available".to_string())
-                                .build()
-                                .as_bytes(true),
-                        )
-                        .await
-                        .unwrap();
-
-                        conn.buffer.clear();
-                        conn.status = SMTPConnectionStatus::WaitingCommand;
-                    }
-                };
-            } else if conn.status == SMTPConnectionStatus::StartTLS && !use_tls {
-                log::trace!("[🛡️] TLS not available");
-
-                let _ = conn
-                    .write_socket(
-                        &Message::builder()
-                            .status(StatusCodes::TransactionFailed)
-                            .message("TLS not available".to_string())
-                            .build()
-                            .as_bytes(true),
-                    )
-                    .await
-                    .map_err(|err| log::error!("{}", err));
-
-                conn.buffer.clear();
-                conn.status = SMTPConnectionStatus::WaitingCommand;
-            } else {
-                for (i, message) in response.iter_mut().enumerate() {
-                    let is_last = i == last_index;
-                    let bytes = message.as_bytes(is_last);
-                    conn.write_socket(&bytes).await.unwrap();
-                }
-                conn.buffer.clear();
+                allowed_commands.clone(),
+            ),
+        )
+        .await
+        {
+            Ok(HandleConnectionFlow::Continue) => (),
+            Ok(HandleConnectionFlow::Break) => break,
+            Err(_) => {
+                log::trace!("[❌] Timeout reached, closing connection");
+                break;
             }
         }
     }
@@ -643,6 +455,311 @@ pub async fn handle_connection<B>(
 
     log::trace!("[❌] Closing connection with client");
     let _ = conn.close().await.map_err(|err| log::error!("{}", err));
+}
+
+pub enum HandleConnectionFlow {
+    Continue,
+    Break,
+}
+
+pub async fn handle_connection_logic<B>(
+    use_tls: bool,
+    tls_acceptor: Option<Arc<Mutex<TlsAcceptor>>>,
+    mutex_con: Arc<Mutex<SMTPConnection<B>>>,
+    controllers: Controllers<B>,
+    max_size: usize,
+    allowed_commands: Vec<Commands>,
+) -> HandleConnectionFlow
+where
+    B: 'static + Default + Send + Sync + Clone,
+{
+    let mut conn = mutex_con.lock().await;
+    let mut buf = [0; 2048];
+
+    // Read from the socket
+    let n = conn.read_socket(&mut buf).await.unwrap_or_else(|err| {
+        log::trace!("[🕵️‍♂️💻] Error reading from socket: {}", err);
+        0
+    });
+
+    // Check if the buffer is empty, if so close the connection
+    if n == 0 {
+        drop(conn);
+        log::trace!("[🖥️🔒] Connection closed by client");
+        return HandleConnectionFlow::Break;
+    }
+
+    // Check if the buffer size is greater than 2048, if so reset the buffer
+    if conn.status == SMTPConnectionStatus::WaitingCommand && conn.buffer.len() + n > 2048 {
+        let _ = conn
+            .write_socket(
+                &Message::builder()
+                    .status(StatusCodes::ExceededStorageAllocation)
+                    .message("Buffer size exceeded, Resetting buffer".to_string())
+                    .build()
+                    .as_bytes(true),
+            )
+            .await
+            .map_err(|err| log::error!("{}", err));
+
+        conn.buffer.clear();
+
+        controllers.on_reset.as_ref().map(|on_reset| {
+            let on_reset = on_reset.0.clone();
+            drop(conn);
+            let _ = on_reset(mutex_con.clone());
+        });
+
+        return HandleConnectionFlow::Continue;
+    }
+
+    if conn.status == SMTPConnectionStatus::WaitingData && conn.mail_buffer.len() + n > max_size {
+        let _ = conn
+            .write_socket(
+                &Message::builder()
+                    .status(StatusCodes::ExceededStorageAllocation)
+                    .message("Buffer size exceeded, Resetting buffer".to_string())
+                    .build()
+                    .as_bytes(true),
+            )
+            .await
+            .map_err(|err| log::error!("{}", err));
+
+        conn.mail_buffer.clear();
+
+        controllers.on_reset.as_ref().map(|on_reset| {
+            let on_reset = on_reset.0.clone();
+            drop(conn);
+            let _ = on_reset(mutex_con.clone());
+        });
+
+        return HandleConnectionFlow::Continue;
+    }
+
+    if conn.status == SMTPConnectionStatus::WaitingData {
+        conn.mail_buffer.extend_from_slice(&buf[..n]);
+    } else {
+        conn.buffer.extend_from_slice(&buf[..n]);
+    }
+
+    // Check if the buffer ends with \r\n.\r\n that means that the client has sent the mail data
+    if conn.status == SMTPConnectionStatus::WaitingData && conn.mail_buffer.ends_with(b"\r\n.\r\n")
+    {
+        // Dispatch on_email controller (if exists)
+        if let Some(on_email) = &controllers.on_email {
+            let on_email = on_email.0.clone();
+            let mail = match Mail::<Vec<u8>>::from_bytes(conn.mail_buffer.clone()) {
+                Ok(mail) => mail,
+                Err(err) => {
+                    log::error!("{}", err);
+                    return HandleConnectionFlow::Continue;
+                }
+            };
+
+            // Drop conn, to allow lock on_email controller
+            drop(conn);
+            let response = on_email(mutex_con.clone(), Box::new(mail)).await;
+
+            let conn = mutex_con.lock().await;
+            let _ = conn
+                .write_socket(&response.as_bytes(true))
+                .await
+                .map_err(|err| {
+                    log::error!("{}", err);
+                });
+        } else {
+            let response = Message::builder()
+                .status(StatusCodes::OK)
+                .message("Message received".to_string())
+                .build()
+                .to_string(true);
+
+            conn.write_socket(response.as_bytes()).await.unwrap();
+        }
+
+        let mut conn = mutex_con.lock().await;
+        // Clear the buffer
+        conn.mail_buffer.clear();
+        conn.buffer.clear();
+        // Set the status to WaitingCommand
+        conn.status = SMTPConnectionStatus::WaitingCommand;
+
+        return HandleConnectionFlow::Continue;
+    }
+
+    // Check if the buffer ends with \r\n that means that the client has sent a command
+    if conn.status == SMTPConnectionStatus::WaitingCommand && conn.buffer.ends_with(b"\r\n") {
+        // Parse the buffer into a ClientMessage
+        let mut client_message = match ClientMessage::<String>::from_bytes(conn.buffer.clone()) {
+            Ok(msg) => msg,
+            Err(err) => {
+                match conn
+                    .write_socket(
+                        &Message::builder()
+                            .status(StatusCodes::SyntaxError)
+                            .message(err.to_string())
+                            .build()
+                            .as_bytes(true),
+                    )
+                    .await
+                {
+                    Ok(_) => (),
+                    Err(err) => {
+                        log::error!("{}", err);
+                        return HandleConnectionFlow::Continue;
+                    }
+                }
+
+                return HandleConnectionFlow::Continue;
+            }
+        };
+
+        if client_message.command == Commands::QUIT {
+            return HandleConnectionFlow::Break;
+        } else if client_message.command == Commands::RSET {
+            conn.buffer.clear();
+            conn.status = SMTPConnectionStatus::WaitingCommand;
+            controllers.on_reset.as_ref().map(|on_reset| {
+                let on_reset = on_reset.0.clone();
+                drop(conn);
+                let _ = on_reset(mutex_con.clone());
+            });
+            return HandleConnectionFlow::Continue;
+        }
+
+        log::trace!("[💬] Received Message: {:?}", client_message);
+
+        // Drop the lock to the connection
+        drop(conn);
+        let (mut response, status) = match handle_command(
+            mutex_con.clone(),
+            controllers.clone(),
+            &mut client_message,
+            allowed_commands.clone(),
+            max_size,
+        )
+        .await
+        {
+            Ok((res, status)) => (res, status),
+            Err(err) => {
+                let conn = mutex_con.lock().await;
+                let _ = conn
+                    .write_socket(
+                        &Message::builder()
+                            .status(StatusCodes::TransactionFailed)
+                            .message(err.to_string())
+                            .build()
+                            .as_bytes(true),
+                    )
+                    .await
+                    .map_err(|err| log::error!("{}", err));
+
+                return HandleConnectionFlow::Continue;
+            }
+        };
+
+        log::trace!(
+            "[💬] Response for SMTP command {:?} is: {:?}",
+            client_message.command,
+            response
+        );
+
+        // Lock the connection to send the response to the client
+        let mut conn = mutex_con.lock().await;
+
+        // Set the new status
+        conn.status = status;
+
+        // Get the last index of alls messages (because last message is different)
+        let last_index = response.len() - 1;
+        // Get the tls_acceptor to upgrade the connection to TLS (if needed)
+        let tls_acceptor = tls_acceptor.clone();
+
+        // Check if client want to start TLS and if the server supports it
+        if conn.status == SMTPConnectionStatus::Closed {
+            for (i, message) in response.iter_mut().enumerate() {
+                let is_last = i == last_index;
+                let bytes = message.as_bytes(is_last);
+                conn.write_socket(&bytes).await.unwrap();
+            }
+            conn.buffer.clear();
+            return HandleConnectionFlow::Break;
+        } else if conn.status == SMTPConnectionStatus::StartTLS && use_tls && tls_acceptor.is_some() {
+            // let know the client that we are ready to start TLS
+            match conn
+                .write_socket(
+                    &Message::builder()
+                        .status(StatusCodes::SMTPServiceReady)
+                        .message("Ready to start TLS".to_string())
+                        .build()
+                        .as_bytes(true),
+                )
+                .await
+            {
+                Ok(_) => (),
+                Err(err) => {
+                    log::error!("{}", err);
+                    return HandleConnectionFlow::Break;
+                }
+            }
+
+            log::debug!("Upgrading connection to TLS");
+            drop(conn);
+            match upgrade_to_tls(mutex_con.clone(), tls_acceptor).await {
+                Ok(_) => {
+                    log::debug!("Connection upgraded to TLS");
+
+                    let mut conn = mutex_con.lock().await;
+                    conn.buffer.clear();
+                    conn.status = SMTPConnectionStatus::WaitingCommand;
+
+                    return HandleConnectionFlow::Continue;
+                }
+                Err(err) => {
+                    log::error!("An error ocurred while trying to upgrade to TLS {}", err);
+
+                    let mut conn = mutex_con.lock().await;
+                    conn.write_socket(
+                        &Message::builder()
+                            .status(StatusCodes::TransactionFailed)
+                            .message("TLS not available".to_string())
+                            .build()
+                            .as_bytes(true),
+                    )
+                    .await
+                    .unwrap();
+
+                    conn.buffer.clear();
+                    conn.status = SMTPConnectionStatus::WaitingCommand;
+                }
+            };
+        } else if conn.status == SMTPConnectionStatus::StartTLS && !use_tls {
+            log::trace!("[🛡️] TLS not available");
+
+            let _ = conn
+                .write_socket(
+                    &Message::builder()
+                        .status(StatusCodes::TransactionFailed)
+                        .message("TLS not available".to_string())
+                        .build()
+                        .as_bytes(true),
+                )
+                .await
+                .map_err(|err| log::error!("{}", err));
+
+            conn.buffer.clear();
+            conn.status = SMTPConnectionStatus::WaitingCommand;
+        } else {
+            for (i, message) in response.iter_mut().enumerate() {
+                let is_last = i == last_index;
+                let bytes = message.as_bytes(is_last);
+                conn.write_socket(&bytes).await.unwrap();
+            }
+            conn.buffer.clear();
+        }
+    }
+
+    HandleConnectionFlow::Continue
 }
 
 pub async fn upgrade_to_tls<B>(
@@ -705,7 +822,10 @@ pub async fn handle_command<B>(
     client_message: &mut ClientMessage<String>,
     allowed_commands: Vec<Commands>,
     max_size: usize,
-) -> Result<(Vec<Message>, SMTPConnectionStatus), SMTPError> {
+) -> Result<(Vec<Message>, SMTPConnectionStatus), SMTPError>
+where
+    B: 'static + Default + Send + Sync + Clone,
+{
     log::trace!("[⚙️] Handling SMTP command: {:?}", client_message.command);
 
     // Check if the command is allowed
@@ -758,6 +878,16 @@ pub async fn handle_command<B>(
                         .build(),
                 )
             }
+
+            if controllers.on_auth.is_some() {
+                ehlo_messages.push(
+                    Message::builder()
+                        .status(StatusCodes::OK)
+                        .message("AUTH PLAIN LOGIN CRAM-MD5 DIGEST-MD5 GSSAPI NTLM XOAUTH2".to_string())
+                        .build(),
+                );
+            }
+
             drop(conn);
 
             (ehlo_messages, SMTPConnectionStatus::WaitingCommand)
@@ -830,19 +960,21 @@ pub async fn handle_command<B>(
             SMTPConnectionStatus::Closed,
         ),
         Commands::AUTH => {
-            controllers.on_auth.as_ref().map(|on_auth| {
+            if let Some(on_auth) = &controllers.on_auth {
                 let on_auth = on_auth.0.clone();
-                let data = client_message.data.clone();
-                let _ = on_auth(conn.clone(), data);
-            });
-
-            (
-                vec![Message::builder()
-                    .status(StatusCodes::AuthenticationSuccessful)
-                    .message("Authentication successful".to_string())
-                    .build()],
-                SMTPConnectionStatus::WaitingCommand,
-            )
+                match on_auth(conn.clone(), client_message.data.clone()).await {
+                    Ok(response) => return Ok((vec![response], SMTPConnectionStatus::WaitingCommand)),
+                    Err(response) => return Ok((vec![response], SMTPConnectionStatus::Closed)),
+                }
+            } else {
+                (
+                    vec![Message::builder()
+                        .status(StatusCodes::CommandNotImplemented)
+                        .message("Command not recognized".to_string())
+                        .build()],
+                    SMTPConnectionStatus::WaitingCommand,
+                )
+            }
         }
         Commands::STARTTLS => (
             vec![Message::builder()
