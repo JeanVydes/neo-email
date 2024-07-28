@@ -69,7 +69,7 @@ pub async fn on_auth(
     // We can also decide to not authenticate the user
 
     Ok(Message::builder()
-        .status(neo_email::status_code::StatusCodes::AuthenticationSuccessful)
+        .status(StatusCodes::AuthenticationSuccessful)
         .message("Authenticated".to_string())
         .build())
 }
@@ -106,6 +106,11 @@ pub async fn on_email(
 ### More Examples
 
 Check out [`examples/`](https://github.com/JeanVydes/neo-email/tree/main/examples) for examples
+
+## Authors
+
+* [Jean Vides](https://github.com/JeanVydes)
+* You can be here ;)
 
 ## Sponsors
 
