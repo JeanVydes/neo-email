@@ -1,0 +1,20 @@
+[package]
+name = "neo-email"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jean Vides <jean@nervio.us>"]
+repository = "https://github.com/JeanVydes/neo-email"
+description = "The modern way to build emails services with Rust"
+
+[dependencies]
+hashbrown = "0.14.5"
+log = "0.4.22"
+logger = "0.4.0"
+rayon = "1.10.0"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tokio-native-tls = "0.3.1"
+tokio-tls = "0.3.1"
+
+[features]
+smtp-experimental = []
