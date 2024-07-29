@@ -2,14 +2,25 @@
 
 Neo Email is a cutting-edge Rust crate designed for modern email handling, focusing on robust and secure email systems. It provides comprehensive support for crafting, sending, and validating emails, integrating the latest standards and practices in email technology.
 
+## Install
+
+Use terminal with Cargo
+
+```bash
+cargo add neo-email
+```
+
+or add to your Cargo.toml
+
+```toml
+neo-email = { version = "0.1", features = ["experimental"] }
+```
+
 ## Features
 
 * Easy and Fast to implement
 * Built on top of Tokio
-* Customization
-* Like build a HTTP API
-* Open Source
-* Built-in Utilities like SPF
+* Built-in Utilities like SPF & DKIM (Experimental)
 
 ## Examples
 

@@ -1,9 +1,9 @@
 use crate::{connection::SMTPConnection, errors::SMTPError};
+use base64::prelude::*;
+use sha1::Digest;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use trust_dns_resolver::TokioAsyncResolver;
-use sha1::Digest;
-use base64::prelude::*;
 
 /// # SPFRecordAll
 ///
@@ -85,15 +85,16 @@ impl DKIMRecord {
         // Lock the DNS resolver
         let dns_resolver_guarded = dns_resolver.lock().await;
         // Get the DKIM record from the DNS
-        let spf_record = dns_resolver_guarded
+        let txt_records = dns_resolver_guarded
             .txt_lookup(format!("{}.", dkim_header.domain).as_str())
             .await
             .map_err(|_| SMTPError::DNSError("Failed to get DKIM record".to_string()))?;
 
         // Find the DKIM record for DKIM policy
-        let dkim_record = spf_record
-            .iter()
-            .find(|record| record.to_string().starts_with("v=dkim1") || record.to_string().starts_with("v=DKIM1"));
+        let dkim_record = txt_records.iter().find(|record| {
+            log::error!("Record: {:?}", record.to_string());
+            record.to_string().starts_with("v=dkim1") || record.to_string().starts_with("v=DKIM1")
+        });
 
         // Check if the DKIM record was found
         let dkim_record = match dkim_record {
@@ -106,7 +107,7 @@ impl DKIMRecord {
             Ok(record) => record,
             Err(e) => return Err(e),
         };
-        
+
         // Return the DKIM record
         Ok(parsed_dkim_record)
     }
@@ -123,11 +124,8 @@ pub async fn dkim<B>(
     let conn = conn.lock().await;
     let dkim_header = DKIMHeader::from_string(dkim_header.as_str())?;
     // Get the DKIM record from the DNS
-    let record = match DKIMRecord::get_dns_dkim_record(conn.dns_resolver.clone(), dkim_header.clone()).await
-    {
-        Ok(record) => record,
-        Err(_) => return Err(SMTPError::SPFError("Failed to get DKIM record".to_string())),
-    };
+    let record =
+        DKIMRecord::get_dns_dkim_record(conn.dns_resolver.clone(), dkim_header.clone()).await?;
 
     // TODO
     // Verify the DKIM signature
@@ -170,7 +168,9 @@ pub struct DKIMHeader {
 
 impl DKIMHeader {
     pub fn from_string(header: &str) -> Result<Self, SMTPError> {
-        let header = header.split_whitespace().collect::<Vec<&str>>();
+        let header = header.split(";").collect::<Vec<&str>>();
+        // Remove trailing spaces
+        let header = header.iter().map(|s| s.trim()).collect::<Vec<&str>>();
         let mut version = String::new();
         let mut algorithm = String::new();
         let mut domain = String::new();
@@ -181,8 +181,6 @@ impl DKIMHeader {
 
         for i in 0..header.len() {
             let record = header[i];
-            // trail the ;
-            let record = record.trim_end_matches(';');
             if record.starts_with("v=") {
                 version = record[2..].to_string();
             } else if record.starts_with("a=") {
