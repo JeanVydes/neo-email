@@ -105,4 +105,17 @@ impl Commands {
         let email_address = &data[start + 1..end];
         EmailAddress::from_string(email_address).map_err(|_| SMTPError::ParseError("Invalid email address".to_string()))
     }
+
+    pub fn parse_rcpt_command_data(data: String) -> Result<EmailAddress, SMTPError> {
+        // Trim any leading or trailing whitespace
+        let data = data.trim();
+        
+        // Extract the part between '<' and '>'
+        let start = data.find('<').ok_or(SMTPError::ParseError("Invalid email address".to_string()))?;
+        let end = data.find('>').ok_or(SMTPError::ParseError("Invalid email address".to_string()))?;
+        
+        // Extract and trim the email address part
+        let email_address = &data[start + 1..end];
+        EmailAddress::from_string(email_address).map_err(|_| SMTPError::ParseError("Invalid email address".to_string()))
+    }
 }

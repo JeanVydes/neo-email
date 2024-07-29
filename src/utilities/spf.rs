@@ -26,7 +26,7 @@ pub struct SPFRecord {
     pub version: String,               // Always should be v=spf1
     pub ipv4: Vec<String>,             // List of allowed IPs
     pub all: SPFRecordAll,             // Policy to apply
-    pub include: Vec<String>,          // List of to include SPF records
+    pub root_include: Vec<String>,          // List of to include SPF records
     pub included: Box<Vec<SPFRecord>>, // Included SPF records
     pub redirect: Option<String>,      // Redirect to another domain
 }
@@ -42,7 +42,7 @@ impl SPFRecord {
         version: String,
         ipv4: Vec<String>,
         all: SPFRecordAll,
-        include: Vec<String>,
+        root_include: Vec<String>,
         included: Box<Vec<SPFRecord>>,
         redirect: Option<String>,
     ) -> Self {
@@ -50,7 +50,7 @@ impl SPFRecord {
             version,
             ipv4,
             all,
-            include,
+            root_include,
             included,
             redirect,
         }
@@ -217,19 +217,19 @@ pub async fn sender_policy_framework<B>(
         };
 
     // Check if record require including other SPF records, and include it
-    // For now this included_records cant include other, but allow redirect
-    if record.include.len() > 0 {
+    // For now this included_records cant include other, but allow redirects
+    if record.root_include.len() > 0 {
         // Include only `max_include` records
         let mut i = max_include;
         // Include the SPF records
-        for include in record.clone().include {
+        for include in record.clone().root_include {
             // If the max_include is 0, then break the loop
             if i == 0 {
                 break;
             }
             // For now this included_records cant include other, but allow redirect
             let included_record =
-                match SPFRecord::get_dns_spf_record(3, conn.dns_resolver.clone(), include.as_str())
+                match SPFRecord::get_dns_spf_record(max_depth_redirect, conn.dns_resolver.clone(), include.as_str())
                     .await
                 {
                     Ok(record) => record,
@@ -289,8 +289,9 @@ pub async fn sender_policy_framework<B>(
 
         // Example
         // allowed ip: 130.211.0.0/22 from an allowed Gmail google server
-        // origin ip: 130.211.0.155 that is on /22 range of allowed IPs
-        // so supose, that email is sent from
+        // Range 130.211.0.0 -> 130.211.2.255
+        // origin ip: 130.211.0.155 that is in range of allowed IPs
+        // so supossing that email is sent from
         // let origin_ip = IpAddr::V4(std::net::Ipv4Addr::new(130, 211, 0, 155));`
 
         // Extract the IP number from the peer IP

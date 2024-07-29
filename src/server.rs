@@ -11,6 +11,7 @@ use crate::client_message::ClientMessage;
 use crate::controllers::on_auth::OnAuthController;
 use crate::controllers::on_mail::OnMailCommandController;
 use crate::controllers::on_rcpt::OnRCPTCommandController;
+use crate::controllers::on_unknown_command::OnUnknownCommandController;
 use crate::mail::Mail;
 
 use super::command::Commands;
@@ -74,6 +75,7 @@ pub struct Controllers<B> {
     on_close: Option<OnCloseController<B>>,
     on_mail_cmd: Option<OnMailCommandController<B>>,
     on_rcpt_cmd: Option<OnRCPTCommandController<B>>,
+    on_unknown_cmd: Option<OnUnknownCommandController<B>>,
 }
 
 /// # Clone for Controllers
@@ -91,6 +93,7 @@ where
             on_close: self.on_close.clone(),
             on_mail_cmd: self.on_mail_cmd.clone(),
             on_rcpt_cmd: self.on_rcpt_cmd.clone(),
+            on_unknown_cmd: self.on_unknown_cmd.clone(),
         }
     }
 }
@@ -117,6 +120,7 @@ impl<B> SMTPServer<B> {
                 on_close: None,
                 on_mail_cmd: None,
                 on_rcpt_cmd: None,
+                on_unknown_cmd: None,
             },
             max_size: 1024 * 1024 * 10, // 10MB
             allowed_commands: vec![
@@ -348,6 +352,7 @@ impl<B> SMTPServer<B> {
                     status: SMTPConnectionStatus::WaitingCommand,
                     dns_resolver,
                     state: Arc::new(Mutex::new(B::default())),
+                    tracing_commands: Vec::new(),
                 }));
 
                 if let Some(pool) = pool {
@@ -992,22 +997,36 @@ where
             }
         }
         Commands::RCPT => {
-            if let Some(on_rcpt_cmd) = &controllers.on_rcpt_cmd {
-                let on_rcpt_cmd = on_rcpt_cmd.0.clone();
-                match on_rcpt_cmd(conn.clone(), client_message.data.clone()).await {
-                    Ok(response) => {
-                        return Ok((vec![response], SMTPConnectionStatus::WaitingCommand))
-                    }
-                    Err(response) => return Ok((vec![response], SMTPConnectionStatus::Closed)),
-                }
-            } else {
+            let last_command = conn.lock().await;
+            let last_command = last_command
+                .tracing_commands
+                .last()
+                .unwrap_or(&Commands::HELO);
+
+            if last_command != &Commands::MAIL && last_command != &Commands::RCPT {
                 (
                     vec![Message::builder()
-                        .status(StatusCodes::OK)
-                        .message("Ok".to_string())
+                        .status(StatusCodes::BadSequenceOfCommands)
+                        .message("Bad sequence of commands".to_string())
                         .build()],
                     SMTPConnectionStatus::WaitingCommand,
                 )
+            } else {
+                if let Some(on_rcpt_cmd) = &controllers.on_rcpt_cmd {
+                    let on_rcpt_cmd = on_rcpt_cmd.0.clone();
+                    match on_rcpt_cmd(conn.clone(), client_message.data.clone()).await {
+                        Ok(response) => (vec![response], SMTPConnectionStatus::WaitingCommand),
+                        Err(response) => (vec![response], SMTPConnectionStatus::Closed),
+                    }
+                } else {
+                    (
+                        vec![Message::builder()
+                            .status(StatusCodes::OK)
+                            .message("Ok".to_string())
+                            .build()],
+                        SMTPConnectionStatus::WaitingCommand,
+                    )
+                }
             }
         }
         Commands::DATA => (
@@ -1067,9 +1086,7 @@ where
             if let Some(on_auth) = &controllers.on_auth {
                 let on_auth = on_auth.0.clone();
                 match on_auth(conn.clone(), client_message.data.clone()).await {
-                    Ok(response) => {
-                        return Ok((vec![response], SMTPConnectionStatus::WaitingCommand))
-                    }
+                    Ok(response) => (vec![response], SMTPConnectionStatus::WaitingCommand),
                     Err(response) => return Ok((vec![response], SMTPConnectionStatus::Closed)),
                 }
             } else {
@@ -1082,21 +1099,49 @@ where
                 )
             }
         }
-        Commands::STARTTLS => (
-            vec![Message::builder()
-                .status(StatusCodes::SMTPServiceReady)
-                .message("Ready to start TLS".to_string())
-                .build()],
-            SMTPConnectionStatus::StartTLS,
-        ),
-        _ => (
-            vec![Message::builder()
-                .status(StatusCodes::CommandNotImplemented)
-                .message("Command not recognized".to_string())
-                .build()],
-            SMTPConnectionStatus::WaitingCommand,
-        ),
+        Commands::STARTTLS => {
+            let conn = conn.lock().await;
+
+            if conn.use_tls {
+                (
+                    vec![Message::builder()
+                        .status(StatusCodes::TransactionFailed)
+                        .message("Already using TLS".to_string())
+                        .build()],
+                    SMTPConnectionStatus::WaitingCommand,
+                )
+            } else {
+                (
+                    vec![Message::builder()
+                        .status(StatusCodes::SMTPServiceReady)
+                        .message("Ready to start TLS".to_string())
+                        .build()],
+                    SMTPConnectionStatus::StartTLS,
+                )
+            }
+        }
+        _ => if let Some(on_unknown_cmd) = &controllers.on_unknown_cmd {
+            let on_unknown_cmd = on_unknown_cmd.0.clone();
+            match on_unknown_cmd(conn.clone(), client_message.command.clone()).await {
+                Ok(response) => (vec![response], SMTPConnectionStatus::WaitingCommand),
+                Err(response) => (vec![response], SMTPConnectionStatus::Closed),
+            }
+        } else {
+            (
+                vec![Message::builder()
+                    .status(StatusCodes::CommandNotImplemented)
+                    .message("Command not recognized".to_string())
+                    .build()],
+                SMTPConnectionStatus::WaitingCommand,
+            )
+        },
     };
+
+    let mut guarded_conn = conn.lock().await;
+    guarded_conn
+        .tracing_commands
+        .push(client_message.command.clone());
+    drop(guarded_conn);
 
     Ok(result)
 }

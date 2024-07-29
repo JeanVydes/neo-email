@@ -484,6 +484,7 @@ dependencies = [
  "base64",
  "hashbrown",
  "log",
+ "openssl",
  "rayon",
  "serde",
  "serde_json",

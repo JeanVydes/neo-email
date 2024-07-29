@@ -1,5 +1,6 @@
 use crate::{connection::SMTPConnection, errors::SMTPError};
 use base64::prelude::*;
+use openssl::{pkey::PKey, rsa::Rsa, sign::Verifier};
 use sha1::Digest;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -48,28 +49,33 @@ impl DKIMRecord {
     /// Parse a DNS DKIM record to a DKIMRecord struct
     pub fn from_string(record: &str) -> Result<Self, SMTPError> {
         // Split the record by spaces
-        let record = record.split_whitespace().collect::<Vec<&str>>();
+        let record = record.split(";").collect::<Vec<&str>>();
+        // Remove trailing spaces
+        let record = record.iter().map(|s| s.trim()).collect::<Vec<&str>>();
         // Check if the record has at least 2 elements
         if record.len() < 2 {
             return Err(SMTPError::DKIMError("Invalid DKIM record".to_string()));
         }
 
         // Check if the version is v=dkim1
-        if record[0] != "v=dkim1" {
+        if record[0] != "v=dkim1" && record[0] != "v=DKIM1" {
             return Err(SMTPError::DKIMError("Invalid DKIM version".to_string()));
         }
 
+        let mut version = String::new();
         let mut public_key = String::new();
 
-        for i in 1..record.len() {
+        for i in 0..record.len() {
             let record = record[i];
-            if record.starts_with("p=") {
+            if record.starts_with("v=") {
+                version = record[2..].to_string().to_lowercase();
+            } else if record.starts_with("p=") {
                 public_key = record[2..].to_string();
             }
         }
 
         // Return the DKIM record
-        Ok(DKIMRecord::new(record[0].to_string(), public_key))
+        Ok(DKIMRecord::new(version, public_key))
     }
 
     /// # get_dns_dkim_record
@@ -92,15 +98,17 @@ impl DKIMRecord {
 
         // Find the DKIM record for DKIM policy
         let dkim_record = txt_records.iter().find(|record| {
-            log::error!("Record: {:?}", record.to_string());
             record.to_string().starts_with("v=dkim1") || record.to_string().starts_with("v=DKIM1")
         });
 
         // Check if the DKIM record was found
-        let dkim_record = match dkim_record {
+        /*let dkim_record = match dkim_record {
             Some(record) => record.to_string(),
             None => return Err(SMTPError::SPFError("DKIM record not found".to_string())),
-        };
+        };*/
+
+        // test dkim record
+        let dkim_record = "v=DKIM1;t=s;p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDiZDfLB7SBvT+I7uAiikct0qiJGXaFq5rL3qn8cX383VpNq0V7pCKlW3rpdPcHzG9LvV68kIvpdxZZDR+9z41JIFg79hA2FrHpZhCpyRKrpdJKR8nI0VXBHPWKWcVibvH45faDwNtQNwA7BvIkeMd48TzbXg3aOe1m1wuQOQ2UawIDAQAB".to_string();
 
         // Parse the DKIM record
         let parsed_dkim_record = match Self::from_string(dkim_record.as_str()) {
@@ -126,33 +134,54 @@ pub async fn dkim<B>(
     // Get the DKIM record from the DNS
     let record =
         DKIMRecord::get_dns_dkim_record(conn.dns_resolver.clone(), dkim_header.clone()).await?;
+    let pem_key = format_public_key(record.public_key.as_str());
+    let rsa = Rsa::public_key_from_pem(pem_key.as_bytes())
+        .map_err(|err| SMTPError::DKIMError(err.to_string()))?;
+    let pkey = PKey::from_rsa(rsa).map_err(|err| SMTPError::DKIMError(err.to_string()))?;
 
-    // TODO
-    // Verify the DKIM signature
-    let hashed_body = match dkim_header.algorithm.as_str() {
-        "rsa-sha1" => {
-            // Hash the body with SHA1
-            let hashed_body = sha1::Sha1::digest(&body);
-            // Encode the hashed body to base64
-            BASE64_STANDARD.encode(hashed_body.as_slice())
-        }
-        "rsa-sha256" => {
-            // Hash the body with SHA256
-            let hashed_body = sha2::Sha256::digest(&body);
-            // Encode the hashed body to base64
-            BASE64_STANDARD.encode(hashed_body.as_slice())
-        }
+    let alg = match dkim_header.algorithm.as_str() {
+        "rsa-sha1" => openssl::hash::MessageDigest::sha1(),
+        "rsa-sha256" => openssl::hash::MessageDigest::sha256(),
         _ => return Err(SMTPError::DKIMError("Invalid DKIM algorithm".to_string())),
     };
 
-    log::error!("Hashed body: {}", hashed_body);
+    let mut verifier =
+        Verifier::new(alg, &pkey).map_err(|e| SMTPError::DKIMError(e.to_string()))?;
+    verifier
+        .set_rsa_padding(openssl::rsa::Padding::PKCS1)
+        .map_err(|e| SMTPError::DKIMError(e.to_string()))?;
 
-    // Check if the body hash is the same as the DKIM header body hash
-    if hashed_body != dkim_header.body_hash {
-        return Err(SMTPError::DKIMError("Invalid DKIM body hash".to_string()));
-    }
+    let clean_signature = dkim_header
+        .signature
+        .replace('\r', "")
+        .replace('\n', "")
+        .replace(' ', "");
+
+    // Decode the Base64 encoded signature
+    let mut signature_bytes = match BASE64_STANDARD.decode(clean_signature.as_bytes()) {
+        Ok(signature_bytes) => signature_bytes,
+        Err(e) => return Err(SMTPError::DKIMError(e.to_string())),
+    };
+
+    // Verify the signature
+    verifier
+        .verify(&signature_bytes)
+        .map_err(|e| SMTPError::DKIMError(e.to_string()))?;
 
     Ok(record)
+}
+
+fn format_public_key(base64_key: &str) -> String {
+    let key = base64_key.replace("\n", "").replace("\r", "");
+    format!(
+        "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----",
+        key.chars()
+            .collect::<Vec<char>>()
+            .chunks(64)
+            .map(|chunk| chunk.iter().collect::<String>())
+            .collect::<Vec<String>>()
+            .join("\n")
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -168,6 +197,7 @@ pub struct DKIMHeader {
 
 impl DKIMHeader {
     pub fn from_string(header: &str) -> Result<Self, SMTPError> {
+        // Split the record by spaces
         let header = header.split(";").collect::<Vec<&str>>();
         // Remove trailing spaces
         let header = header.iter().map(|s| s.trim()).collect::<Vec<&str>>();

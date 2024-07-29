@@ -31,7 +31,7 @@ impl Message {
     ///
     /// This function converts the message to a string.
     pub fn to_string(&self, is_last: bool) -> String {
-        // If it is the last message, return the status code and message
+        // If it is the last message, return the status code and message with a space
         // If it is not the last message, return the status code and message with a dash
         if is_last {
             format!("{} {}\r\n", self.status.to_string(), self.message)

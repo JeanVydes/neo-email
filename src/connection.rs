@@ -8,6 +8,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::io::AsyncReadExt;
 use trust_dns_resolver::TokioAsyncResolver;
 
+use crate::command::Commands;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SMTPConnectionStatus {
     StartTLS,
@@ -21,14 +23,24 @@ pub enum SMTPConnectionStatus {
 /// This struct represents a connection to the SMTP server with the necessary information.
 #[derive(Clone)]
 pub struct SMTPConnection<T> {
+    // Use TLS
     pub use_tls: bool,
+    // TLS Buffer
     pub tls_buff_socket: Option<Arc<Mutex<BufStream<TlsStream<TcpStream>>>>>,
+    // TCP Buffer
     pub tcp_buff_socket: Option<Arc<Mutex<BufStream<TcpStream>>>>,
+    // Buffer
     pub buffer: Vec<u8>,
+    // Mail Buffer
     pub mail_buffer: Vec<u8>,
+    // Connection Status
     pub status: SMTPConnectionStatus,
+    // DNS Resolver
     pub dns_resolver: Arc<Mutex<TokioAsyncResolver>>,
+    // Custom state
     pub state: Arc<Mutex<T>>,
+    // Keep track of the commands that are being received
+    pub tracing_commands: Vec<Commands>,
 }
 
 impl<T> SMTPConnection<T> {
