@@ -12,13 +12,13 @@ pub enum EmailHeaders {
     AcceptLanguage, // https://www.iana.org/go/rfc4021
     #[serde(rename = "Alternate-Recipient")]
     AlternateRecipient, // https://www.iana.org/go/rfc4021
-    #[cfg(feature = "smtp-experimental")]
+    #[cfg(feature = "smtp-experimental-headers")]
     #[serde(rename = "ARC-Authentication-Results")]
     ARCAuthenticationResults, // https://www.iana.org/go/rfc8617
-    #[cfg(feature = "smtp-experimental")]
+    #[cfg(feature = "smtp-experimental-headers")]
     #[serde(rename = "ARC-Message-Signature")]
     ARCMessageSignature, // https://www.iana.org/go/rfc8617
-    #[cfg(feature = "smtp-experimental")]
+    #[cfg(feature = "smtp-experimental-headers")]
     #[serde(rename = "ARC-Seal")]
     ARCSeal, // https://www.iana.org/go/rfc8617
     #[serde(rename = "Archived-At")]
@@ -250,11 +250,11 @@ impl EmailHeaders {
         match self {
             EmailHeaders::AcceptLanguage => "Accept-Language",
             EmailHeaders::AlternateRecipient => "Alternate-Recipient",
-            #[cfg(feature = "smtp-experimental")]
+            #[cfg(feature = "smtp-experimental-headers")]
             EmailHeaders::ARCAuthenticationResults => "ARC-Authentication-Results",
-            #[cfg(feature = "smtp-experimental")]
+            #[cfg(feature = "smtp-experimental-headers")]
             EmailHeaders::ARCMessageSignature => "ARC-Message-Signature",
-            #[cfg(feature = "smtp-experimental")]
+            #[cfg(feature = "smtp-experimental-headers")]
             EmailHeaders::ARCSeal => "ARC-Seal",
             EmailHeaders::ArchivedAt => "Archived-At",
             EmailHeaders::AuthenticationResults => "Authentication-Results",
@@ -363,11 +363,11 @@ impl EmailHeaders {
         match s.to_lowercase().as_str() {
             "accept-language" => EmailHeaders::AcceptLanguage,
             "alternate-recipient" => EmailHeaders::AlternateRecipient,
-            #[cfg(feature = "smtp-experimental")]
+            #[cfg(feature = "smtp-experimental-headers")]
             "arc-authentication-results" => EmailHeaders::ARCAuthenticationResults,
-            #[cfg(feature = "smtp-experimental")]
+            #[cfg(feature = "smtp-experimental-headers")]
             "arc-message-signature" => EmailHeaders::ARCMessageSignature,
-            #[cfg(feature = "smtp-experimental")]
+            #[cfg(feature = "smtp-experimental-headers")]
             "arc-seal" => EmailHeaders::ARCSeal,
             "archived-at" => EmailHeaders::ArchivedAt,
             "authentication-results" => EmailHeaders::AuthenticationResults,

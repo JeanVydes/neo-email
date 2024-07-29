@@ -11,17 +11,39 @@ keywords = ["smtp", "email", "mail", "tokio", "neo-email"]
 categories = ["network-programming", "asynchronous", "email"]
 
 [dependencies]
-base64 = "0.22.1"
 hashbrown = "0.14.5"
 log = "0.4.22"
 rayon = "1.10.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.121"
-sha1 = "0.10.6"
-sha2 = "0.10.8"
 tokio = { version = "1", features = ["full"] }
 tokio-native-tls = "0.3.1"
 trust-dns-resolver = "0.23.2"
 
+sha1 = { version = "0.10", optional = true }
+sha2 = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }
+
 [features]
-smtp-experimental = []
+# Some email headers are experiemental, more information: https://www.iana.org/assignments/message-headers/message-headers.xhtml
+smtp-experimental-headers = []
+smtp-experimental = [
+    "smtp-experimental-headers"
+]
+
+spf-experimental = []
+dkim-experimental = [
+    "sha1",
+    "sha2",
+    "base64"
+]
+
+utilities-experimental = [
+    "spf-experimental",
+    "dkim-experimental"
+]
+
+experimental = [
+    "smtp-experimental",
+    "utilities-experimental"
+]
