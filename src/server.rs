@@ -100,10 +100,10 @@ impl<B> SMTPServer<B> {
     ///
     /// Create a new SMTPServer with default values.
     pub fn new() -> Self {
-        let dns_resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
-
+        let dns_resolver =
+            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
         let dns_resolver = Arc::new(Mutex::new(dns_resolver));
-        
+
         SMTPServer {
             use_tls: false,
             listener: None,
@@ -144,7 +144,7 @@ impl<B> SMTPServer<B> {
     ///
     /// Set the number of workers to be used in the ThreadPool, 1 by default.
     pub fn workers(&mut self, workers: usize) -> &mut Self {
-        log::info!("Setting workers to {}", workers);
+        log::info!("[🚧] Setting workers to {}", workers);
         self.workers = workers;
         self
     }
@@ -158,9 +158,19 @@ impl<B> SMTPServer<B> {
     /// ```rust
     /// ```
     pub fn set_tls_acceptor(&mut self, acceptor: tokio_native_tls::TlsAcceptor) -> &mut Self {
-        log::info!("TLS Acceptor set");
+        log::debug!("[📃] TLS Acceptor set");
         self.use_tls = true;
         self.tls_acceptor = Some(Arc::new(Mutex::new(acceptor)));
+        self
+    }
+
+    /// # set_dns_resolver
+    ///
+    /// Set the DNS Resolver to be used when resolving the domain of the email.
+    /// This ovverides the default DNS Resolver.
+    pub fn set_dns_resolver(&mut self, resolver: TokioAsyncResolver) -> &mut Self {
+        log::debug!("[📃] DNS Resolver set");
+        self.dns_resolver = Arc::new(Mutex::new(resolver));
         self
     }
 
@@ -169,7 +179,7 @@ impl<B> SMTPServer<B> {
     /// Set the max size of the email that can be received.
     /// size in bytes
     pub fn set_max_size(&mut self, max_size: usize) -> &mut Self {
-        log::info!("Setting max size to {}", max_size);
+        log::debug!("[📃] Setting max size to {}", max_size);
         self.max_size = max_size;
         self
     }
@@ -178,7 +188,7 @@ impl<B> SMTPServer<B> {
     ///
     /// Set the allowed commands that the server will accept.
     pub fn set_allowed_commands(&mut self, commands: Vec<Commands>) -> &mut Self {
-        log::info!("Setting allowed commands");
+        log::debug!("[📃] Setting allowed commands");
         self.allowed_commands = commands;
         self
     }
@@ -187,7 +197,7 @@ impl<B> SMTPServer<B> {
     ///
     /// Set the OnAuthController to be used when an auth command is received.
     pub fn on_auth(&mut self, on_auth: OnAuthController<B>) -> &mut Self {
-        log::info!("Setting OnAuthController");
+        log::debug!("[📃] Setting OnAuthController");
         self.controllers.on_auth = Some(on_auth);
         self
     }
@@ -201,7 +211,7 @@ impl<B> SMTPServer<B> {
     /// ```rust
     /// ```
     pub fn on_email(&mut self, on_email: OnEmailController<B>) -> &mut Self {
-        log::info!("Setting OnEmailController");
+        log::debug!("[📃] Setting OnEmailController");
         self.controllers.on_email = Some(on_email);
         self
     }
@@ -210,7 +220,7 @@ impl<B> SMTPServer<B> {
     ///
     /// Set the OnResetController to be used when a connection is reset.
     pub fn on_reset(&mut self, on_reset: OnResetController<B>) -> &mut Self {
-        log::info!("Setting OnResetController");
+        log::debug!("[📃] Setting OnResetController");
         self.controllers.on_reset = Some(on_reset);
         self
     }
@@ -219,31 +229,43 @@ impl<B> SMTPServer<B> {
     ///
     /// Set the OnCloseController to be used when a connection will be closed.
     pub fn on_close(&mut self, on_close: OnCloseController<B>) -> &mut Self {
-        log::info!("Setting OnCloseController");
+        log::debug!("[📃] Setting OnCloseController");
         self.controllers.on_close = Some(on_close);
         self
     }
 
+    /// # on_mail_cmd
+    ///
+    /// Set the OnMailCommandController to be used when a mail command is received.
     pub fn on_mail_cmd(&mut self, on_mail_cmd: OnMailCommandController<B>) -> &mut Self {
-        log::info!("Setting OnMailCommandController");
+        log::debug!("[📃] Setting OnMailCommandController");
         self.controllers.on_mail_cmd = Some(on_mail_cmd);
         self
     }
 
+    /// # on_rcpt_cmd
+    ///
+    /// Set the OnRCPTCommandController to be used when a rcpt command is received.
     pub fn on_rcpt_cmd(&mut self, on_rcpt_cmd: OnRCPTCommandController<B>) -> &mut Self {
-        log::info!("Setting OnRCPTCommandController");
+        log::debug!("[📃] Setting OnRCPTCommandController");
         self.controllers.on_rcpt_cmd = Some(on_rcpt_cmd);
         self
     }
 
+    /// # set_max_session_duration
+    ///
+    /// Set the max session duration.
     pub fn set_max_session_duration(&mut self, duration: Duration) -> &mut Self {
-        log::info!("Setting max session duration to {:?}", duration);
+        log::debug!("[📃] Setting max session duration to {:?}", duration);
         self.max_session_duration = duration;
         self
     }
 
+    /// # set_max_op_duration
+    ///
+    /// Set the max operation duration.
     pub fn set_max_op_duration(&mut self, duration: Duration) -> &mut Self {
-        log::info!("Setting max operation duration to {:?}", duration);
+        log::debug!("[📃] Setting max operation duration to {:?}", duration);
         self.max_op_duration = duration;
         self
     }
@@ -252,7 +274,7 @@ impl<B> SMTPServer<B> {
     ///
     /// This function is responsible for binding the SMTPServer to a specific address.
     pub async fn bind(&mut self, address: SocketAddr) -> Result<&mut Self, tokio::io::Error> {
-        log::info!("Binding to {}", address);
+        log::info!("[🔗 ] Binding to {}", address);
         let listener = tokio::net::TcpListener::bind(address).await?;
         self.listener = Some(Arc::new(listener));
         Ok(self)
@@ -272,7 +294,7 @@ impl<B> SMTPServer<B> {
         };
 
         // Build the ThreadPool with the number of workers, 1 by default
-        log::info!("Building ThreadPool with {} workers", self.workers);
+        log::info!("[🚧] Building ThreadPool with {} workers", self.workers);
         self.threads_pool = match rayon::ThreadPoolBuilder::new()
             .num_threads(self.workers)
             .build()
@@ -282,7 +304,7 @@ impl<B> SMTPServer<B> {
         };
 
         // Start the main loop for accepting connections
-        log::info!("Starting main loop for accepting connections");
+        log::info!("[🔧] Starting main loop for accepting connections");
         loop {
             // Accept a new connection
             let (socket, _) = match listener.accept().await {
@@ -296,7 +318,10 @@ impl<B> SMTPServer<B> {
                 }
             };
 
-            log::debug!("Connection received from {}", socket.peer_addr().unwrap());
+            log::trace!(
+                "[🔍] Connection received from {}",
+                socket.peer_addr().unwrap()
+            );
 
             // Clone the thread pool, use_tls, tls_acceptor and controllers to be used in the tokio::spawn
             let pool = self.threads_pool.clone();
@@ -311,7 +336,7 @@ impl<B> SMTPServer<B> {
 
             // Spawn a new task to handle the connection
             tokio::spawn(async move {
-                log::debug!("Initializing TCP connection");
+                log::trace!("[🟢] Initializing TCP connection");
 
                 // Create a new SMTPConnection and wrap it in an Arc<Mutex> to be shared safely between threads
                 let conn = Arc::new(Mutex::new(SMTPConnection {
@@ -409,7 +434,7 @@ pub async fn handle_connection<B>(
 ) where
     B: 'static + Default + Send + Sync + Clone,
 {
-    log::trace!("[] Handling connection with optional TLS?: {}", use_tls);
+    log::trace!("[📜] Handling connection with optional TLS?: {}", use_tls);
     // Send the initial message to the client
     let conn = mutex_con.lock().await;
     // Send the initial message to the client that lets the client know that the server is ready
@@ -430,7 +455,7 @@ pub async fn handle_connection<B>(
     // Drop the lock to the connection
     drop(conn);
 
-    log::trace!("[] Connection initialized, and start proccessing commands");
+    log::trace!("[🚀] Connection initialized, and start proccessing commands");
     // Start the main loop for reading from the socket
 
     loop {
@@ -450,7 +475,7 @@ pub async fn handle_connection<B>(
             Ok(HandleConnectionFlow::Continue) => (),
             Ok(HandleConnectionFlow::Break) => break,
             Err(_) => {
-                log::trace!("[❌] Timeout reached, closing connection");
+                log::trace!("[⏳] Timeout reached, closing connection");
                 break;
             }
         }
@@ -470,7 +495,7 @@ pub async fn handle_connection<B>(
     let conn = mutex_con.lock().await;
 
     // Send the final message to the client
-    log::trace!("[❌] Sending final message to client to close");
+    log::trace!("[👋] Sending final message to client to close");
     let _ = conn
         .write_socket(
             &Message::builder()
@@ -482,7 +507,7 @@ pub async fn handle_connection<B>(
         .await
         .map_err(|err| log::error!("{}", err));
 
-    log::trace!("[❌] Closing connection with client");
+    log::trace!("[🔌] Closing connection with client");
     let _ = conn.close().await.map_err(|err| log::error!("{}", err));
 }
 
@@ -585,6 +610,8 @@ where
                 }
             };
 
+            conn.mail_buffer.clear();
+
             // Drop conn, to allow lock on_email controller
             drop(conn);
             let response = on_email(mutex_con.clone(), Box::new(mail)).await;
@@ -606,13 +633,13 @@ where
             conn.write_socket(response.as_bytes()).await.unwrap();
         }
 
+        log::trace!("[📧] Email received, Relocking connection to ensure mail_buffer to be clean");
         let mut conn = mutex_con.lock().await;
-        // Clear the buffer
-        conn.mail_buffer.clear();
-        conn.buffer.clear();
         // Set the status to WaitingCommand
         conn.status = SMTPConnectionStatus::WaitingCommand;
-
+        conn.buffer.clear();
+        conn.mail_buffer.clear();
+        log::trace!("[📧] Connection status set to WaitingCommand");
         return HandleConnectionFlow::Continue;
     }
 
@@ -644,15 +671,33 @@ where
         };
 
         if client_message.command == Commands::QUIT {
+            log::trace!("[🚪] Connection closed by client");
             return HandleConnectionFlow::Break;
         } else if client_message.command == Commands::RSET {
+            log::trace!("[🔄] Connection Reset Request, cleaning buffers and waiting commands...");
             conn.buffer.clear();
+            conn.mail_buffer.clear();
             conn.status = SMTPConnectionStatus::WaitingCommand;
-            controllers.on_reset.as_ref().map(|on_reset| {
+
+            log::trace!("[🔄] Connection Resetted, running on_reset controller...");
+            if let Some(on_reset) = &controllers.on_reset {
                 let on_reset = on_reset.0.clone();
                 drop(conn);
                 let _ = on_reset(mutex_con.clone());
-            });
+            } else {
+                let _ = conn
+                    .write_socket(
+                        &Message::builder()
+                            .status(StatusCodes::OK)
+                            .message("Connection reset".to_string())
+                            .build()
+                            .as_bytes(true),
+                    )
+                    .await
+                    .map_err(|err| log::error!("{}", err));
+            }
+
+            log::trace!("[🔄] Connection Resetted, buffers cleaned, and waiting commands...");
             return HandleConnectionFlow::Continue;
         }
 
@@ -713,7 +758,8 @@ where
             }
             conn.buffer.clear();
             return HandleConnectionFlow::Break;
-        } else if conn.status == SMTPConnectionStatus::StartTLS && use_tls && tls_acceptor.is_some() {
+        } else if conn.status == SMTPConnectionStatus::StartTLS && use_tls && tls_acceptor.is_some()
+        {
             // let know the client that we are ready to start TLS
             match conn
                 .write_socket(
@@ -732,11 +778,11 @@ where
                 }
             }
 
-            log::debug!("Upgrading connection to TLS");
+            log::trace!("[🌐🔒] Upgrading connection to TLS");
             drop(conn);
             match upgrade_to_tls(mutex_con.clone(), tls_acceptor).await {
                 Ok(_) => {
-                    log::debug!("Connection upgraded to TLS");
+                    log::trace!("[🌐🔒🟢] Connection upgraded to TLS");
 
                     let mut conn = mutex_con.lock().await;
                     conn.buffer.clear();
@@ -745,7 +791,10 @@ where
                     return HandleConnectionFlow::Continue;
                 }
                 Err(err) => {
-                    log::error!("An error ocurred while trying to upgrade to TLS {}", err);
+                    log::error!(
+                        "[🌐🔒🚫] An error ocurred while trying to upgrade to TLS {}",
+                        err
+                    );
 
                     let mut conn = mutex_con.lock().await;
                     conn.write_socket(
@@ -763,7 +812,7 @@ where
                 }
             };
         } else if conn.status == SMTPConnectionStatus::StartTLS && !use_tls {
-            log::trace!("[🛡️] TLS not available");
+            log::trace!("[🌐🔒🚫] TLS not available");
 
             let _ = conn
                 .write_socket(
@@ -820,19 +869,19 @@ pub async fn upgrade_to_tls<B>(
     let tls_acceptor = tls_acceptor.lock().await.clone();
     log::trace!("[🌐🔒] TLS Acceptor locked");
 
-    log::trace!("[🌐🔒] Accepting TLS connection");
+    log::trace!("[🌐🔒🟢] Accepting TLS connection");
 
     let tls_stream = match timeout(Duration::from_secs(10), tls_acceptor.accept(tcp_stream)).await {
         Ok(Ok(tls_stream)) => {
-            log::trace!("[🌐🔒] TLS connection Accepted");
+            log::trace!("[🌐🔒🟢] TLS connection Accepted");
             tls_stream
         }
         Ok(Err(err)) => {
-            log::error!("[🌐🔒] Error during TLS handshake: {}", err);
+            log::error!("[🌐🔒🚫] Error during TLS handshake: {}", err);
             return Err(err.into());
         }
         Err(_) => {
-            log::error!("[🌐🔒] TLS handshake timed out");
+            log::error!("[🌐🔒🚫] TLS handshake timed out");
             return Err("TLS handshake timed out".into());
         }
     };
@@ -912,7 +961,9 @@ where
                 ehlo_messages.push(
                     Message::builder()
                         .status(StatusCodes::OK)
-                        .message("AUTH PLAIN LOGIN CRAM-MD5 DIGEST-MD5 GSSAPI NTLM XOAUTH2".to_string())
+                        .message(
+                            "AUTH PLAIN LOGIN CRAM-MD5 DIGEST-MD5 GSSAPI NTLM XOAUTH2".to_string(),
+                        )
                         .build(),
                 );
             }
@@ -925,7 +976,9 @@ where
             if let Some(on_mail_cmd) = &controllers.on_mail_cmd {
                 let on_mail_cmd = on_mail_cmd.0.clone();
                 match on_mail_cmd(conn.clone(), client_message.data.clone()).await {
-                    Ok(response) => return Ok((vec![response], SMTPConnectionStatus::WaitingCommand)),
+                    Ok(response) => {
+                        return Ok((vec![response], SMTPConnectionStatus::WaitingCommand))
+                    }
                     Err(response) => return Ok((vec![response], SMTPConnectionStatus::Closed)),
                 }
             } else {
@@ -937,12 +990,14 @@ where
                     SMTPConnectionStatus::WaitingCommand,
                 )
             }
-        },
+        }
         Commands::RCPT => {
             if let Some(on_rcpt_cmd) = &controllers.on_rcpt_cmd {
                 let on_rcpt_cmd = on_rcpt_cmd.0.clone();
                 match on_rcpt_cmd(conn.clone(), client_message.data.clone()).await {
-                    Ok(response) => return Ok((vec![response], SMTPConnectionStatus::WaitingCommand)),
+                    Ok(response) => {
+                        return Ok((vec![response], SMTPConnectionStatus::WaitingCommand))
+                    }
                     Err(response) => return Ok((vec![response], SMTPConnectionStatus::Closed)),
                 }
             } else {
@@ -954,7 +1009,7 @@ where
                     SMTPConnectionStatus::WaitingCommand,
                 )
             }
-        },
+        }
         Commands::DATA => (
             vec![Message::builder()
                 .status(StatusCodes::StartMailInput)
@@ -1012,7 +1067,9 @@ where
             if let Some(on_auth) = &controllers.on_auth {
                 let on_auth = on_auth.0.clone();
                 match on_auth(conn.clone(), client_message.data.clone()).await {
-                    Ok(response) => return Ok((vec![response], SMTPConnectionStatus::WaitingCommand)),
+                    Ok(response) => {
+                        return Ok((vec![response], SMTPConnectionStatus::WaitingCommand))
+                    }
                     Err(response) => return Ok((vec![response], SMTPConnectionStatus::Closed)),
                 }
             } else {

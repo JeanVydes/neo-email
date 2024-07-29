@@ -43,6 +43,10 @@ pub enum EmailHeaders {
     ContentIdentifier, // https://www.iana.org/go/rfc4021
     #[serde(rename = "Content-Return")]
     ContentReturn, // https://www.iana.org/go/rfc4021
+    #[serde(rename = "Content-Type")]
+    ContentType, // https://www.iana.org/go/rfc4021
+    #[serde(rename = "Content-Transfer-Encoding")]
+    ContentTransferEncoding, // https://www.iana.org/go/rfc4021
     #[serde(rename = "Conversion")]
     Conversion, // https://www.iana.org/go/rfc4021
     #[serde(rename = "Conversion-With-Loss")]
@@ -131,6 +135,10 @@ pub enum EmailHeaders {
     MessageId, // https://www.iana.org/go/rfc5322
     #[serde(rename = "Message-Type")]
     MessageType, // https://www.iana.org/go/rfc4021
+    #[serde(rename = "MIME-Type")]
+    MIMEType, // https://www.iana.org/go/rfc4021
+    #[serde(rename = "MIME-Version")]
+    MIMEVersion, // https://www.iana.org/go/rfc4021
     #[serde(rename = "MT-Priority")]
     MTPriority, // https://www.iana.org/go/rfc6758
 
@@ -228,15 +236,240 @@ pub enum EmailHeaders {
     X400Recipients, // https://www.iana.org/go/rfc4021
     #[serde(rename = "X400-Trace")]
     X400Trace, // https://www.iana.org/go/rfc4021
+
+    Unknown(String),
 }
 
 impl EmailHeaders {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        // Convert bytes to string and trim any whitespace
-        let s = from_utf8(bytes).map_err(|_| "Invalid header")?.trim().to_string();
+        let s = from_utf8(bytes).map_err(|_| "Invalid header")?;
+        Ok(EmailHeaders::from_str(s).unwrap_or(EmailHeaders::Unknown(s.to_string())))
+    }
 
-        // Use serde_json to deserialize the string into EmailHeaders enum
-        serde_json::from_str(&format!("\"{}\"", s)).map_err(|_| "Unknown header".to_string())
+    pub fn to_string(&self) -> &str {
+        match self {
+            EmailHeaders::AcceptLanguage => "Accept-Language",
+            EmailHeaders::AlternateRecipient => "Alternate-Recipient",
+            #[cfg(feature = "smtp-experimental")]
+            EmailHeaders::ARCAuthenticationResults => "ARC-Authentication-Results",
+            #[cfg(feature = "smtp-experimental")]
+            EmailHeaders::ARCMessageSignature => "ARC-Message-Signature",
+            #[cfg(feature = "smtp-experimental")]
+            EmailHeaders::ARCSeal => "ARC-Seal",
+            EmailHeaders::ArchivedAt => "Archived-At",
+            EmailHeaders::AuthenticationResults => "Authentication-Results",
+            EmailHeaders::AutoSubmitted => "Auto-Submitted",
+            EmailHeaders::AutoForwarded => "Autoforwarded",
+            EmailHeaders::Autosubmitted => "Autosubmitted",
+            EmailHeaders::Bcc => "Bcc",
+            EmailHeaders::Cc => "Cc",
+            EmailHeaders::Comments => "Comments",
+            EmailHeaders::ContentIdentifier => "Content-Identifier",
+            EmailHeaders::ContentReturn => "Content-Return",
+            EmailHeaders::ContentType => "Content-Type",
+            EmailHeaders::ContentTransferEncoding => "Content-Transfer-Encoding",
+            EmailHeaders::Conversion => "Conversion",
+            EmailHeaders::ConversionWithLoss => "Conversion-With-Loss",
+            EmailHeaders::DLExpansionHistory => "DL-Expansion-History",
+            EmailHeaders::Date => "Date",
+            EmailHeaders::DeferredDelivery => "Deferred-Delivery",
+            EmailHeaders::DeliveryDate => "Delivery-Date",
+            EmailHeaders::DiscardedX400IPMSExtensions => "Discarded-X400-IPMS-Extensions",
+            EmailHeaders::DiscardedX400MTSExtensions => "Discarded-X400-MTS-Extensions",
+            EmailHeaders::DiscloseRecipients => "Disclose-Recipients",
+            EmailHeaders::DispositionNotificationOptions => "Disposition-Notification-Options",
+            EmailHeaders::DispositionNotificationTo => "Disposition-Notification-To",
+            EmailHeaders::DKIMSignature => "DKIM-Signature",
+            EmailHeaders::DowngradedFinalRecipient => "Downgraded-Final-Recipient",
+            EmailHeaders::DowngradedInReplyTo => "Downgraded-In-Reply-To",
+            EmailHeaders::DowngradedMessageId => "Downgraded-Message-Id",
+            EmailHeaders::DowngradedOriginalRecipient => "Downgraded-Original-Recipient",
+            EmailHeaders::DowngradedReferences => "Downgraded-References",
+            EmailHeaders::Encoding => "Encoding",
+            EmailHeaders::Encrypted => "Encrypted",
+            EmailHeaders::Expires => "Expires",
+            EmailHeaders::ExpiryDate => "Expiry-Date",
+            EmailHeaders::From => "From",
+            EmailHeaders::GenerateDeliveryReport => "Generate-Delivery-Report",
+            EmailHeaders::Importance => "Importance",
+            EmailHeaders::InReplyTo => "In-Reply-To",
+            EmailHeaders::IncompleteCopy => "Incomplete-Copy",
+            EmailHeaders::Keywords => "Keywords",
+            EmailHeaders::Language => "Language",
+            EmailHeaders::LatestDeliveryTime => "Latest-Delivery-Time",
+            EmailHeaders::ListArchive => "List-Archive",
+            EmailHeaders::ListHelp => "List-Help",
+            EmailHeaders::ListId => "List-Id",
+            EmailHeaders::ListOwner => "List-Owner",
+            EmailHeaders::ListPost => "List-Post",
+            EmailHeaders::ListSubscribe => "List-Subscribe",
+            EmailHeaders::ListUnsubscribe => "List-Unsubscribe",
+            EmailHeaders::ListUnsubscribePost => "List-Unsubscribe-Post",
+            EmailHeaders::MessageContext => "Message-Context",
+            EmailHeaders::MessageId => "Message-Id",
+            EmailHeaders::MessageType => "Message-Type",
+            EmailHeaders::MIMEType => "MIME-Type",
+            EmailHeaders::MIMEVersion => "MIME-Version",
+            EmailHeaders::MTPriority => "MT-Priority",
+            EmailHeaders::Obsoletes => "Obsoletes",
+            EmailHeaders::Organization => "Organization",
+            EmailHeaders::OriginalEncodedInformationTypes => "Original-Encoded-Information-Types",
+            EmailHeaders::OriginalFrom => "Original-From",
+            EmailHeaders::OriginalMessageId => "Original-Message-Id",
+            EmailHeaders::OriginalRecipient => "Original-Recipient",
+            EmailHeaders::OriginatorReturnAddress => "Originator-Return-Address",
+            EmailHeaders::OriginalSubject => "Original-Subject",
+            EmailHeaders::PICSLabel => "PICS-Label",
+            EmailHeaders::PreventNonDeliveryReport => "Prevent-NonDelivery-Report",
+            EmailHeaders::Priority => "Priority",
+            EmailHeaders::Received => "Received",
+            EmailHeaders::ReceivedSPF => "Received-SPF",
+            EmailHeaders::References => "References",
+            EmailHeaders::ReplyBy => "Reply-By",
+            EmailHeaders::ReplyTo => "Reply-To",
+            EmailHeaders::RequireRecipientValidSince => "Require-Recipient-Valid-Since",
+            EmailHeaders::ResentBcc => "Resent-Bcc",
+            EmailHeaders::ResentCc => "Resent-Cc",
+            EmailHeaders::ResentDate => "Resent-Date",
+            EmailHeaders::ResentFrom => "Resent-From",
+            EmailHeaders::ResentMessageId => "Resent-Message-Id",
+            EmailHeaders::ResentReplyTo => "Resent-Reply-To",
+            EmailHeaders::ResentSender => "Resent-Sender",
+            EmailHeaders::ResentTo => "Resent-To",
+            EmailHeaders::ReturnPath => "Return-Path",
+            EmailHeaders::Sender => "Sender",
+            EmailHeaders::Sensitivity => "Sensitivity",
+            EmailHeaders::Solicitation => "Solicitation",
+            EmailHeaders::Subject => "Subject",
+            EmailHeaders::Supersedes => "Supersedes",
+            EmailHeaders::TLSReportDomain => "TLS-Report-Domain",
+            EmailHeaders::TLSReportSubmitter => "TLS-Report-Submitter",
+            EmailHeaders::TLSRequired => "TlS-Required",
+            EmailHeaders::To => "To",
+            EmailHeaders::VBRInfo => "VBR-Info",
+            EmailHeaders::X400ContentIdentifier => "X400-Content-Identifier",
+            EmailHeaders::X400ContentReturn => "X400-Content-Return",
+            EmailHeaders::X400ContentType => "X400-Content-Type",
+            EmailHeaders::X400MTSIdentifier => "X400-MTS-Identifier",
+            EmailHeaders::X400Originator => "X400-Originator",
+            EmailHeaders::X400Received => "X400-Received",
+            EmailHeaders::X400Recipients => "X400-Recipients",
+            EmailHeaders::X400Trace => "X400-Trace",
+            EmailHeaders::Unknown(ref s) => s,
+        }
+    }
+
+    pub fn from_string(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "accept-language" => EmailHeaders::AcceptLanguage,
+            "alternate-recipient" => EmailHeaders::AlternateRecipient,
+            #[cfg(feature = "smtp-experimental")]
+            "arc-authentication-results" => EmailHeaders::ARCAuthenticationResults,
+            #[cfg(feature = "smtp-experimental")]
+            "arc-message-signature" => EmailHeaders::ARCMessageSignature,
+            #[cfg(feature = "smtp-experimental")]
+            "arc-seal" => EmailHeaders::ARCSeal,
+            "archived-at" => EmailHeaders::ArchivedAt,
+            "authentication-results" => EmailHeaders::AuthenticationResults,
+            "auto-submitted" => EmailHeaders::AutoSubmitted,
+            "autoforwarded" => EmailHeaders::AutoForwarded,
+            "autosubmitted" => EmailHeaders::Autosubmitted,
+            "bcc" => EmailHeaders::Bcc,
+            "cc" => EmailHeaders::Cc,
+            "comments" => EmailHeaders::Comments,
+            "content-identifier" => EmailHeaders::ContentIdentifier,
+            "content-return" => EmailHeaders::ContentReturn,
+            "content-type" => EmailHeaders::ContentType,
+            "content-transfer-encoding" => EmailHeaders::ContentTransferEncoding,
+            "conversion" => EmailHeaders::Conversion,
+            "conversion-with-loss" => EmailHeaders::ConversionWithLoss,
+            "dl-expansion-history" => EmailHeaders::DLExpansionHistory,
+            "date" => EmailHeaders::Date,
+            "deferred-delivery" => EmailHeaders::DeferredDelivery,
+            "delivery-date" => EmailHeaders::DeliveryDate,
+            "discarded-x400-ipms-extensions" => EmailHeaders::DiscardedX400IPMSExtensions,
+            "discarded-x400-mts-extensions" => EmailHeaders::DiscardedX400MTSExtensions,
+            "disclose-recipients" => EmailHeaders::DiscloseRecipients,
+            "disposition-notification-options" => EmailHeaders::DispositionNotificationOptions,
+            "disposition-notification-to" => EmailHeaders::DispositionNotificationTo,
+            "dkim-signature" => EmailHeaders::DKIMSignature,
+            "downgraded-final-recipient" => EmailHeaders::DowngradedFinalRecipient,
+            "downgraded-in-reply-to" => EmailHeaders::DowngradedInReplyTo,
+            "downgraded-message-id" => EmailHeaders::DowngradedMessageId,
+            "downgraded-original-recipient" => EmailHeaders::DowngradedOriginalRecipient,
+            "downgraded-references" => EmailHeaders::DowngradedReferences,
+            "encoding" => EmailHeaders::Encoding,
+            "encrypted" => EmailHeaders::Encrypted,
+            "expires" => EmailHeaders::Expires,
+            "expiry-date" => EmailHeaders::ExpiryDate,
+            "from" => EmailHeaders::From,
+            "generate-delivery-report" => EmailHeaders::GenerateDeliveryReport,
+            "importance" => EmailHeaders::Importance,
+            "in-reply-to" => EmailHeaders::InReplyTo,
+            "incomplete-copy" => EmailHeaders::IncompleteCopy,
+            "keywords" => EmailHeaders::Keywords,
+            "language" => EmailHeaders::Language,
+            "latest-delivery-time" => EmailHeaders::LatestDeliveryTime,
+            "list-archive" => EmailHeaders::ListArchive,
+            "list-help" => EmailHeaders::ListHelp,
+            "list-id" => EmailHeaders::ListId,
+            "list-owner" => EmailHeaders::ListOwner,
+            "list-post" => EmailHeaders::ListPost,
+            "list-subscribe" => EmailHeaders::ListSubscribe,
+            "list-unsubscribe" => EmailHeaders::ListUnsubscribe,
+            "list-unsubscribe-post" => EmailHeaders::ListUnsubscribePost,
+            "message-context" => EmailHeaders::MessageContext,
+            "message-id" => EmailHeaders::MessageId,
+            "message-type" => EmailHeaders::MessageType,
+            "mime-type" => EmailHeaders::MIMEType,
+            "mime-version" => EmailHeaders::MIMEVersion,
+            "mt-priority" => EmailHeaders::MTPriority,
+            "obsoletes" => EmailHeaders::Obsoletes,
+            "organization" => EmailHeaders::Organization,
+            "original-encoded-information-types" => EmailHeaders::OriginalEncodedInformationTypes,
+            "original-from" => EmailHeaders::OriginalFrom,
+            "original-message-id" => EmailHeaders::OriginalMessageId,
+            "original-recipient" => EmailHeaders::OriginalRecipient,
+            "originator-return-address" => EmailHeaders::OriginatorReturnAddress,
+            "original-subject" => EmailHeaders::OriginalSubject,
+            "pics-label" => EmailHeaders::PICSLabel,
+            "prevent-nondelivery-report" => EmailHeaders::PreventNonDeliveryReport,
+            "priority" => EmailHeaders::Priority,
+            "received" => EmailHeaders::Received,
+            "received-spf" => EmailHeaders::ReceivedSPF,
+            "references" => EmailHeaders::References,
+            "reply-by" => EmailHeaders::ReplyBy,
+            "reply-to" => EmailHeaders::ReplyTo,
+            "require-recipient-valid-since" => EmailHeaders::RequireRecipientValidSince,
+            "resent-bcc" => EmailHeaders::ResentBcc,
+            "resent-cc" => EmailHeaders::ResentCc,
+            "resent-date" => EmailHeaders::ResentDate,
+            "resent-from" => EmailHeaders::ResentFrom,
+            "resent-message-id" => EmailHeaders::ResentMessageId,
+            "resent-reply-to" => EmailHeaders::ResentReplyTo,
+            "resent-sender" => EmailHeaders::ResentSender,
+            "resent-to" => EmailHeaders::ResentTo,
+            "return-path" => EmailHeaders::ReturnPath,
+            "sender" => EmailHeaders::Sender,
+            "sensitivity" => EmailHeaders::Sensitivity,
+            "solicitation" => EmailHeaders::Solicitation,
+            "subject" => EmailHeaders::Subject,
+            "supersedes" => EmailHeaders::Supersedes,
+            "tls-report-domain" => EmailHeaders::TLSReportDomain,
+            "tls-report-submitter" => EmailHeaders::TLSReportSubmitter,
+            "tls-required" => EmailHeaders::TLSRequired,
+            "to" => EmailHeaders::To,
+            "vbr-info" => EmailHeaders::VBRInfo,
+            "x400-content-identifier" => EmailHeaders::X400ContentIdentifier,
+            "x400-content-return" => EmailHeaders::X400ContentReturn,
+            "x400-content-type" => EmailHeaders::X400ContentType,
+            "x400-mts-identifier" => EmailHeaders::X400MTSIdentifier,
+            "x400-originator" => EmailHeaders::X400Originator,
+            "x400-received" => EmailHeaders::X400Received,
+            "x400-recipients" => EmailHeaders::X400Recipients,
+            "x400-trace" => EmailHeaders::X400Trace,
+            _ => EmailHeaders::Unknown(s.to_string()),
+        }
     }
 }
 

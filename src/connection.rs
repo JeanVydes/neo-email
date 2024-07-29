@@ -37,14 +37,14 @@ impl<T> SMTPConnection<T> {
     /// This function creates a new SMTPConnection.
     pub async fn write_socket(&self, data: &[u8]) -> std::io::Result<()> {
         if self.use_tls {
-            log::trace!("Writing to TLS socket");
+            log::trace!("[✏️] Writing to TLS socket");
             if let Some(tls_buff_socket) = &self.tls_buff_socket {
                 let mut tls_buff_socket = tls_buff_socket.lock().await;
                 tls_buff_socket.write_all(data).await?;
                 tls_buff_socket.flush().await?;
             }
         } else {
-            log::trace!("Writing to TCP socket");
+            log::trace!("[✏️] Writing to TCP socket");
             if let Some(tcp_buff_socket) = &self.tcp_buff_socket {
                 let mut tcp_buff_socket = tcp_buff_socket.lock().await;
                 tcp_buff_socket.write_all(data).await?;
@@ -64,7 +64,7 @@ impl<T> SMTPConnection<T> {
                 let mut tls_buff_socket = tls_buff_socket.lock().await;
                 tls_buff_socket.read(data).await
             } else {
-                log::error!("No socket to read from");
+                log::trace!("[🚫] No socket to read from");
                 Ok(0)
             }
         } else {
@@ -72,7 +72,7 @@ impl<T> SMTPConnection<T> {
                 let mut tcp_buff_socket = tcp_buff_socket.lock().await;
                 tcp_buff_socket.read(data).await
             } else {
-                log::error!("No socket to read from");
+                log::trace!("[🚫] No socket to read from");
                 Ok(0)
             }
         }
@@ -85,7 +85,7 @@ impl<T> SMTPConnection<T> {
                 let tls_buff_socket = tls_buff_socket.lock().await;
                 Ok(tls_buff_socket.get_ref().get_ref().get_ref().get_ref().peer_addr()?)
             } else {
-                log::error!("No socket to read from");
+                log::trace!("[🚫] No socket to read from");
                 Err(std::io::Error::new(std::io::ErrorKind::Other, "No socket to read from"))
             }
         } else {
@@ -93,7 +93,7 @@ impl<T> SMTPConnection<T> {
                 let tcp_buff_socket = tcp_buff_socket.lock().await;
                 Ok(tcp_buff_socket.get_ref().peer_addr()?)
             } else {
-                log::error!("No socket to read from");
+                log::trace!("[🚫] No socket to read from");
                 Err(std::io::Error::new(std::io::ErrorKind::Other, "No socket to read from"))
             }
         }

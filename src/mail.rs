@@ -1,5 +1,7 @@
 use std::str::from_utf8;
 
+use crate::errors::SMTPError;
+
 use super::headers::EmailHeaders;
 use hashbrown::HashMap;
 
@@ -89,5 +91,33 @@ impl<T: Clone + Send + Sync + 'static> Clone for Mail<T> {
             headers: self.headers.clone(),
             body: self.body.clone(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EmailAddress {
+    pub username: String,
+    pub domain: String,
+}
+
+impl EmailAddress {
+    pub fn from_string(data: &str) -> Result<Self, SMTPError> {
+        let mut parts = data.split('@');
+        let username = parts.next().ok_or(SMTPError::ParseError("Invalid email address".to_string()))?.to_owned();
+        let domain = parts.next().ok_or(SMTPError::ParseError("Invalid email address".to_string()))?.to_owned();
+    
+        if domain.is_empty() {
+            return Err(SMTPError::ParseError("Invalid email address".to_string()));
+        }
+
+        if domain.len() > 253 {
+            return Err(SMTPError::ParseError("Invalid email address".to_string()));
+        }
+
+        Ok(EmailAddress { username, domain })
+    }
+
+    pub fn to_string(&self) -> String {
+        format!("{}@{}", self.username, self.domain)
     }
 }

@@ -4,16 +4,16 @@ use tokio::sync::Mutex;
 use trust_dns_resolver::TokioAsyncResolver;
 
 /// # SPFRecordAll
-/// 
+///
 /// Represents the policy to apply in the SPF record
-/// 
+///
 /// - Aggresive: -all means that all IPs that are not listed in the SPF record are not allowed to send emails
 /// - Passive: ~all means that all IPs that are not listed in the SPF record are allowed to send emails but marked as spam
 /// - Permissive: +all means that all IPs that are not listed in the SPF record are allowed to send emails
 #[derive(Debug, Clone)]
 pub enum SPFRecordAll {
     Aggresive, // -all means that all IPs that are not listed in the SPF record are not allowed to send emails
-    Passive,// ~all means that all IPs that are not listed in the SPF record are allowed to send emails but marked as spam
+    Passive, // ~all means that all IPs that are not listed in the SPF record are allowed to send emails but marked as spam
     Permissive, // +all means that all IPs that are not listed in the SPF record are allowed to send emails
 }
 
@@ -23,16 +23,16 @@ pub enum SPFRecordAll {
 /// Example `v=spf1 ip4:192.0.2.0 ip4:192.0.2.1 include:examplesender.email -all`
 #[derive(Debug, Clone)]
 pub struct SPFRecord {
-    pub version: String, // Always should be v=spf1
-    pub ipv4: Vec<String>, // List of allowed IPs
-    pub all: SPFRecordAll, // Policy to apply
-    pub include: Vec<String>, // List of to include SPF records
+    pub version: String,               // Always should be v=spf1
+    pub ipv4: Vec<String>,             // List of allowed IPs
+    pub all: SPFRecordAll,             // Policy to apply
+    pub include: Vec<String>,          // List of to include SPF records
     pub included: Box<Vec<SPFRecord>>, // Included SPF records
-    pub redirect: Option<String>, // Redirect to another domain
+    pub redirect: Option<String>,      // Redirect to another domain
 }
 
 /// # SPFRecord
-/// 
+///
 /// SPFRecord implementation
 impl SPFRecord {
     /// # new
@@ -57,20 +57,24 @@ impl SPFRecord {
     }
 
     /// # from_string
-    /// 
+    ///
     /// Parse a DNS SPF record to a SPFRecord struct
-    pub fn from_string(spf_record: &str) -> Result<Self, String> {
+    pub fn from_string(spf_record: &str) -> Result<Self, SMTPError> {
         // Remove trailing spaces
         let spf_record = spf_record.trim();
         // Split the record by spaces
         let spf_record = spf_record.split_whitespace().collect::<Vec<&str>>();
         // Check if the record is valid (have enough information)
         if spf_record.len() < 2 {
-            return Err("Invalid SPF record".to_string());
+            return Err(SMTPError::SPFError("Invalid SPF record".to_string()));
         }
 
         // Extract the version (should be v=spf1)
         let version = spf_record[0].to_string().split("=").collect::<Vec<&str>>()[1].to_string();
+        if version != "spf1" {
+            return Err(SMTPError::SPFError("Invalid SPF version".to_string()));
+        }
+
         // Initialize the lists
         let mut ip4 = Vec::new();
         // Initialize the policy
@@ -109,11 +113,18 @@ impl SPFRecord {
         }
 
         // Return the SPFRecord
-        Ok(SPFRecord::new(version, ip4, all, include, Box::new(vec![]),redirect))
+        Ok(SPFRecord::new(
+            version,
+            ip4,
+            all,
+            include,
+            Box::new(vec![]),
+            redirect,
+        ))
     }
 
     /// # get_dns_spf_record
-    /// 
+    ///
     /// Get the SPF record from the DNS
     /// `remaining_redirects` is the number of redirects that the DNS resolver will follow
     /// `dns_resolver` is the DNS resolver
@@ -122,19 +133,19 @@ impl SPFRecord {
         remaining_redirects: u8,
         dns_resolver: Arc<Mutex<TokioAsyncResolver>>,
         domain: &str,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, SMTPError> {
         // Check if the number of remaining redirects is 0, and return an error
         if remaining_redirects == 0 {
-            return Err("Too many redirects".to_string());
+            return Err(SMTPError::DNSError("Max redirects reached".to_string()));
         }
 
         // Lock the DNS resolver
         let dns_resolver_guarded = dns_resolver.lock().await;
         // Get the SPF record from the DNS
         let spf_record = dns_resolver_guarded
-            .txt_lookup(domain.to_string())
+            .txt_lookup(format!("{}.", domain).as_str())
             .await
-            .map_err(|_| "Failed to get SPF record")?;
+            .map_err(|_| SMTPError::DNSError("Failed to get SPF record".to_string()))?;
 
         // Find the SPF record for SPF policy
         let spf_record = spf_record
@@ -144,7 +155,7 @@ impl SPFRecord {
         // Check if the SPF record was found
         let spf_record = match spf_record {
             Some(record) => record.to_string(),
-            None => return Err("SPF record not found".to_string()),
+            None => return Err(SMTPError::SPFError("SPF record not found".to_string())),
         };
 
         // Parse the SPF record
@@ -172,7 +183,7 @@ impl SPFRecord {
 }
 
 /// # sender_policy_framework
-/// 
+///
 /// Check if the sender is allowed to send emails on behalf of the domain
 /// `conn` is the SMTP connection
 /// `domain` is the domain to check the SPF record
@@ -195,10 +206,13 @@ pub async fn sender_policy_framework<B>(
     };
 
     // Get the SPF record from the DNS with a max depth of 3
-    let mut record = match SPFRecord::get_dns_spf_record(max_depth_redirect, conn.dns_resolver.clone(), domain).await {
-        Ok(record) => record,
-        Err(_) => return Err(SMTPError::SPFError("Failed to get SPF record".to_string())),
-    };
+    let mut record =
+        match SPFRecord::get_dns_spf_record(max_depth_redirect, conn.dns_resolver.clone(), domain)
+            .await
+        {
+            Ok(record) => record,
+            Err(_) => return Err(SMTPError::SPFError("Failed to get SPF record".to_string())),
+        };
 
     // Check if record require including other SPF records, and include it
     // For now this included_records cant include other, but allow redirect
@@ -212,10 +226,17 @@ pub async fn sender_policy_framework<B>(
                 break;
             }
             // For now this included_records cant include other, but allow redirect
-            let included_record = match SPFRecord::get_dns_spf_record(3, conn.dns_resolver.clone(), include.as_str()).await {
-                Ok(record) => record,
-                Err(_) => return Err(SMTPError::SPFError("Failed to get included SPF record".to_string())),
-            };
+            let included_record =
+                match SPFRecord::get_dns_spf_record(3, conn.dns_resolver.clone(), include.as_str())
+                    .await
+                {
+                    Ok(record) => record,
+                    Err(_) => {
+                        return Err(SMTPError::SPFError(
+                            "Failed to get included SPF record".to_string(),
+                        ))
+                    }
+                };
             // Add the included record to the SPF record
             record.included.push(included_record);
             // Decrement the counter
@@ -231,8 +252,7 @@ pub async fn sender_policy_framework<B>(
     }
 
     // Check if the IP is in the list of allowed IPs
-    let listed_ipv4_record = total_ipv4.iter()
-        .find(|record| *record == &ip.to_string());
+    let listed_ipv4_record = total_ipv4.iter().find(|record| *record == &ip.to_string());
 
     // Check the policy based on the result
     match (policy, listed_ipv4_record) {

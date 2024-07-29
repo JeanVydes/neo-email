@@ -1,185 +1,206 @@
+use crate::{connection::SMTPConnection, errors::SMTPError};
 use std::sync::Arc;
-
-use hashbrown::HashMap;
 use tokio::sync::Mutex;
-use trust_dns_resolver::Resolver;
+use trust_dns_resolver::TokioAsyncResolver;
 
-use crate::{errors::SMTPError, headers::EmailHeaders, mail::Mail};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DkimSignatureHeader {
-    version: String,                      // DKIM version
-    algorithm: String,                    // Algorithm used for the signature
-    canonicalization: String,             // Canonicalization methods for header and body
-    domain: String,                       // Domain used in the DKIM signature
-    selector: String,                     // Selector for the DKIM key
-    timestamp: Option<u64>,               // Unix timestamp for when the signature was generated
-    body_hash: Option<String>,            // Hash of the email body
-    header_list: Option<Vec<String>>,     // List of headers included in the signature
-    signature: String,                    // Actual digital signature in base64 encoding
+/// # SPFRecordAll
+///
+/// Represents the policy to apply in the SPF record
+///
+/// - Aggresive: -all means that all IPs that are not listed in the SPF record are not allowed to send emails
+/// - Passive: ~all means that all IPs that are not listed in the SPF record are allowed to send emails but marked as spam
+/// - Permissive: +all means that all IPs that are not listed in the SPF record are allowed to send emails
+#[derive(Debug, Clone)]
+pub enum SPFRecordAll {
+    Aggresive, // -all means that all IPs that are not listed in the SPF record are not allowed to send emails
+    Passive, // ~all means that all IPs that are not listed in the SPF record are allowed to send emails but marked as spam
+    Permissive, // +all means that all IPs that are not listed in the SPF record are allowed to send emails
 }
 
-impl DkimSignatureHeader {
-    fn new(
-        version: String,
-        algorithm: String,
-        canonicalization: String,
-        domain: String,
-        selector: String,
-        signature: String,
-        timestamp: Option<u64>,
-        body_hash: Option<String>,
-        header_list: Option<Vec<String>>,
-    ) -> Self {
-        DkimSignatureHeader {
+/// # SPFRecord
+///
+/// Represents an SPF record
+/// Example `v=spf1 ip4:192.0.2.0 ip4:192.0.2.1 include:examplesender.email -all`
+#[derive(Debug, Clone)]
+pub struct DKIMRecord {
+    pub version: String,    // Always should be v=dkim1
+    pub public_key: String, // The public key
+}
+
+/// # DKIMRecord
+///
+/// DKIMRecord implementation
+impl DKIMRecord {
+    /// # new
+    ///
+    /// Creates a new DKIMRecord
+    pub fn new(version: String, public_key: String) -> Self {
+        DKIMRecord {
             version,
-            algorithm,
-            canonicalization,
-            domain,
-            selector,
-            timestamp,
-            body_hash,
-            header_list,
-            signature,
+            public_key,
         }
     }
 
-    fn to_string(&self) -> String {
-        let mut header = format!(
-            "v={}; a={}; c={}; d={}; s={}; b={}",
-            self.version,
-            self.algorithm,
-            self.canonicalization,
-            self.domain,
-            self.selector,
-            self.signature,
-        );
-
-        if let Some(timestamp) = self.timestamp {
-            header.push_str(&format!("; t={}", timestamp));
-        }
-        if let Some(ref body_hash) = self.body_hash {
-            header.push_str(&format!("; bh={}", body_hash));
-        }
-        if let Some(ref header_list) = self.header_list {
-            header.push_str(&format!("; h={}", header_list.join(":")));
+    /// # from_string
+    ///
+    /// Parse a DNS DKIM record to a DKIMRecord struct
+    pub fn from_string(record: &str) -> Result<Self, SMTPError> {
+        // Split the record by spaces
+        let record = record.split_whitespace().collect::<Vec<&str>>();
+        // Check if the record has at least 2 elements
+        if record.len() < 2 {
+            return Err(SMTPError::DKIMError("Invalid DKIM record".to_string()));
         }
 
-        header
+        // Check if the version is v=dkim1
+        if record[0] != "v=dkim1" {
+            return Err(SMTPError::DKIMError("Invalid DKIM version".to_string()));
+        }
+
+        let mut public_key = String::new();
+
+        for i in 1..record.len() {
+            let record = record[i];
+            if record.starts_with("p=") {
+                public_key = record[2..].to_string();
+            }
+        }
+
+        // Return the DKIM record
+        Ok(DKIMRecord::new(record[0].to_string(), public_key))
     }
 
-    fn from_string(header: &str) -> Result<Self, SMTPError> {
-        let mut fields: HashMap<&str, &str> = HashMap::new();
+    /// # get_dns_dkim_record
+    ///
+    /// Get the DKIM record from the DNS
+    /// `remaining_redirects` is the number of redirects that the DNS resolver will follow
+    /// `dns_resolver` is the DNS resolver
+    /// `domain` is the domain to get the SPF record
+    pub async fn get_dns_dkim_record(
+        dns_resolver: Arc<Mutex<TokioAsyncResolver>>,
+        dkim_header: DKIMHeader,
+    ) -> Result<Self, SMTPError> {
+        // Lock the DNS resolver
+        let dns_resolver_guarded = dns_resolver.lock().await;
+        // Get the DKIM record from the DNS
+        let spf_record = dns_resolver_guarded
+            .txt_lookup(format!("{}.", dkim_header.domain).as_str())
+            .await
+            .map_err(|_| SMTPError::DNSError("Failed to get DKIM record".to_string()))?;
 
-        for part in header.split(';') {
-            let mut kv = part.splitn(2, '=');
-            let key = kv.next().ok_or(SMTPError::DKIMError("Invalid DKIM-Signature header".to_owned()))?.trim();
-            let value = kv.next().ok_or(SMTPError::DKIMError("Invalid DKIM-Signature header".to_owned()))?.trim();
-            fields.insert(key, value);
-        }
+        // Find the DKIM record for DKIM policy
+        let dkim_record = spf_record
+            .iter()
+            .find(|record| record.to_string().starts_with("v=dkim1"));
 
-        let version = fields.get("v").ok_or(SMTPError::DKIMError("Missing version field".to_owned()))?.to_string();
-        let algorithm = fields.get("a").ok_or(SMTPError::DKIMError("Missing algorithm field".to_owned()))?.to_string();
-        let canonicalization = fields.get("c").ok_or(SMTPError::DKIMError("Missing canonicalization field".to_owned()))?.to_string();
-        let domain = fields.get("d").ok_or(SMTPError::DKIMError("Missing domain field".to_owned()))?.to_string();
-        let selector = fields.get("s").ok_or(SMTPError::DKIMError("Missing selector field".to_owned()))?.to_string();
-        let signature = fields.get("b").ok_or(SMTPError::DKIMError("Missing signature field".to_owned()))?.to_string();
+        // Check if the DKIM record was found
+        let dkim_record = match dkim_record {
+            Some(record) => record.to_string(),
+            None => return Err(SMTPError::SPFError("DKIM record not found".to_string())),
+        };
 
-        let timestamp = fields.get("t").map(|t| t.parse::<u64>().ok()).flatten();
-        let body_hash = fields.get("bh").map(|bh| bh.to_string());
-        let header_list = fields.get("h").map(|h| h.split(':').map(|s| s.to_string()).collect());
-
-        Ok(DkimSignatureHeader {
-            version,
-            algorithm,
-            canonicalization,
-            domain,
-            selector,
-            timestamp,
-            body_hash,
-            header_list,
-            signature,
-        })
+        // Parse the DKIM record
+        let parsed_dkim_record = match Self::from_string(dkim_record.as_str()) {
+            Ok(record) => record,
+            Err(e) => return Err(e),
+        };
+        
+        // Return the DKIM record
+        Ok(parsed_dkim_record)
     }
 }
 
-pub async fn verify_dkim_from_email<'a, T>(
-    dns_resolver: Arc<Mutex<Resolver>>,
-    mail: Mail<T>,
-) -> Result<bool, SMTPError> {
-    let dkim_signature = mail
-        .headers
-        .get(&EmailHeaders::DKIMSignature)
-        .ok_or(SMTPError::DKIMError("DKIM Signature not found".to_owned()))?;
-    let dkim_signature = DkimSignatureHeader::from_string(dkim_signature)?;
-    let dkim_record = query_dkim_record(dns_resolver.clone(), &dkim_signature).await?;
-    let dkim_record = DkimPublicKey::from_record(&dkim_record)?;
-    let alg = dkim_signature.algorithm.to_lowercase();
-
-    let result = match alg.as_str() {
-        "rsa-sha1" => {
-            // Verify using RSA-SHA1
-            // ...
-            true
-        }
-        "rsa-sha256" => {
-            // Verify using RSA-SHA256
-            // ...
-            true
-        }
-        _ => false,
+/// # sender_policy_framework
+///
+/// Check if the sender is allowed to send emails on behalf of the domain
+/// `conn` is the SMTP connection
+/// `domain` is the domain to check the SPF record
+/// `policy` is the policy to apply
+/// `max_depth_redirect` is the maximum depth of redirects that the SPF record can have
+/// `max_include` is the maximum number of included SPF records
+pub async fn dkim<B>(
+    conn: Arc<Mutex<SMTPConnection<B>>>,
+    dkim_header: String,
+) -> Result<DKIMRecord, SMTPError> {
+    let conn = conn.lock().await;
+    let dkim_header = DKIMHeader::from_string(dkim_header.as_str())?;
+    // Get the DKIM record from the DNS with a max depth of 3
+    let record = match DKIMRecord::get_dns_dkim_record(conn.dns_resolver.clone(), dkim_header).await
+    {
+        Ok(record) => record,
+        Err(_) => return Err(SMTPError::SPFError("Failed to get DKIM record".to_string())),
     };
 
-    Ok(result)
-}
+    // TODO
+    // Verify the DKIM signature
 
-pub async fn query_dkim_record(
-    dns_resolver: Arc<Mutex<Resolver>>,
-    dkim_signature: &DkimSignatureHeader,
-) -> Result<String, SMTPError> {
-    let selector = &dkim_signature.selector;
-    let domain = &dkim_signature.domain;
-
-    let query_name = format!("{}._domainkey.{}.", selector, domain);
-
-    let dns_resolver = dns_resolver.lock().await;
-
-    match dns_resolver.txt_lookup(&query_name) {
-        Ok(response) => {
-            for txt in response.iter() {
-                let txt_data = txt.to_string();
-                if txt_data.contains(&format!("v={}", dkim_signature.version)) {
-                    return Ok(txt_data);
-                }
-            }
-            Err(SMTPError::DKIMError("DKIM record not found".to_owned()))
-        }
-        Err(e) => Err(SMTPError::DKIMError(format!("DNS query failed: {}", e))),
-    }
+    Ok(record)
 }
 
 #[derive(Debug, Clone)]
-pub struct DkimPublicKey {
-    pub pub_key: String,
-    pub flags: Option<String>,
-    pub hash_algo: Option<String>,
+pub struct DKIMHeader {
+    pub version: String,
+    pub algorithm: String,
+    pub domain: String,
+    pub selector: String,
+    pub headers: Vec<String>,
+    pub body_hash: String,
+    pub signature: String,
 }
 
-impl DkimPublicKey {
-    pub fn from_record(record: &str) -> Result<DkimPublicKey, SMTPError> {
-        let mut fields: HashMap<&str, &str> = HashMap::new();
+impl DKIMHeader {
+    pub fn from_string(header: &str) -> Result<Self, SMTPError> {
+        let header = header.split_whitespace().collect::<Vec<&str>>();
+        let mut version = String::new();
+        let mut algorithm = String::new();
+        let mut domain = String::new();
+        let mut selector = String::new();
+        let mut headers = Vec::new();
+        let mut body_hash = String::new();
+        let mut signature = String::new();
 
-        for part in record.split(';') {
-            let mut kv = part.splitn(2, '=');
-            let key = kv.next().ok_or(SMTPError::DKIMError("Invalid DKIM record".to_owned()))?.trim();
-            let value = kv.next().ok_or(SMTPError::DKIMError("Invalid DKIM record".to_owned()))?.trim();
-            fields.insert(key, value);
+        for i in 0..header.len() {
+            let record = header[i];
+            // trail the ;
+            let record = record.trim_end_matches(';');
+            if record.starts_with("v=") {
+                version = record[2..].to_string();
+            } else if record.starts_with("a=") {
+                algorithm = record[2..].to_string();
+            } else if record.starts_with("d=") {
+                domain = record[2..].to_string();
+            } else if record.starts_with("s=") {
+                selector = record[2..].to_string();
+            } else if record.starts_with("h=") {
+                headers = record[2..].split(':').map(|s| s.to_string()).collect();
+            } else if record.starts_with("bh=") {
+                body_hash = record[3..].to_string();
+            } else if record.starts_with("b=") {
+                signature = record[2..].to_string();
+            }
         }
 
-        let pub_key = fields.get("p").ok_or(SMTPError::DKIMError("Public key not found in DKIM record".to_owned()))?.to_string();
-        let flags = fields.get("t").map(|t| t.to_string());
-        let hash_algo = fields.get("h").map(|h| h.to_string());
+        Ok(DKIMHeader {
+            version,
+            algorithm,
+            domain,
+            selector,
+            headers,
+            body_hash,
+            signature,
+        })
+    }
 
-        Ok(DkimPublicKey { pub_key, flags, hash_algo })
+    pub fn to_string(&self) -> String {
+        format!(
+            "v={}; a={}; d={}; s={}; h={}; bh={}; b={}",
+            self.version,
+            self.algorithm,
+            self.domain,
+            self.selector,
+            self.headers.join(":"),
+            self.body_hash,
+            self.signature
+        )
     }
 }

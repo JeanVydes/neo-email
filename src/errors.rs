@@ -11,6 +11,7 @@ pub enum SMTPError {
     ParseError(String),
     DKIMError(String),
     SPFError(String),
+    DNSError(String),
     UnknownCommand(Commands),
     CustomError(String),
 }
@@ -22,6 +23,7 @@ impl fmt::Display for SMTPError {
             SMTPError::ParseError(err) => write!(f, "Parse Error: {}", err),
             SMTPError::DKIMError(err) => write!(f, "DKIM Error: {}", err),
             SMTPError::SPFError(err) => write!(f, "SPF Error: {}", err),
+            SMTPError::DNSError(err) => write!(f, "DNS Error: {}", err),
             SMTPError::UnknownCommand(cmd) => write!(f, "Unknown Command: {:?}", cmd),
             SMTPError::CustomError(msg) => write!(f, "Custom Error: {}", msg),
         }
