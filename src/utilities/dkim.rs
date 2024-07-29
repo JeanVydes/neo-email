@@ -2,6 +2,8 @@ use crate::{connection::SMTPConnection, errors::SMTPError};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use trust_dns_resolver::TokioAsyncResolver;
+use sha1::Digest;
+use base64::prelude::*;
 
 /// # SPFRecordAll
 ///
@@ -91,7 +93,7 @@ impl DKIMRecord {
         // Find the DKIM record for DKIM policy
         let dkim_record = spf_record
             .iter()
-            .find(|record| record.to_string().starts_with("v=dkim1"));
+            .find(|record| record.to_string().starts_with("v=dkim1") || record.to_string().starts_with("v=DKIM1"));
 
         // Check if the DKIM record was found
         let dkim_record = match dkim_record {
@@ -110,22 +112,18 @@ impl DKIMRecord {
     }
 }
 
-/// # sender_policy_framework
+/// # dkim
 ///
-/// Check if the sender is allowed to send emails on behalf of the domain
-/// `conn` is the SMTP connection
-/// `domain` is the domain to check the SPF record
-/// `policy` is the policy to apply
-/// `max_depth_redirect` is the maximum depth of redirects that the SPF record can have
-/// `max_include` is the maximum number of included SPF records
+/// Check if the email is valid with the DKIM record
 pub async fn dkim<B>(
     conn: Arc<Mutex<SMTPConnection<B>>>,
     dkim_header: String,
+    body: Vec<u8>,
 ) -> Result<DKIMRecord, SMTPError> {
     let conn = conn.lock().await;
     let dkim_header = DKIMHeader::from_string(dkim_header.as_str())?;
-    // Get the DKIM record from the DNS with a max depth of 3
-    let record = match DKIMRecord::get_dns_dkim_record(conn.dns_resolver.clone(), dkim_header).await
+    // Get the DKIM record from the DNS
+    let record = match DKIMRecord::get_dns_dkim_record(conn.dns_resolver.clone(), dkim_header.clone()).await
     {
         Ok(record) => record,
         Err(_) => return Err(SMTPError::SPFError("Failed to get DKIM record".to_string())),
@@ -133,6 +131,28 @@ pub async fn dkim<B>(
 
     // TODO
     // Verify the DKIM signature
+    let hashed_body = match dkim_header.algorithm.as_str() {
+        "rsa-sha1" => {
+            // Hash the body with SHA1
+            let hashed_body = sha1::Sha1::digest(&body);
+            // Encode the hashed body to base64
+            BASE64_STANDARD.encode(hashed_body.as_slice())
+        }
+        "rsa-sha256" => {
+            // Hash the body with SHA256
+            let hashed_body = sha2::Sha256::digest(&body);
+            // Encode the hashed body to base64
+            BASE64_STANDARD.encode(hashed_body.as_slice())
+        }
+        _ => return Err(SMTPError::DKIMError("Invalid DKIM algorithm".to_string())),
+    };
+
+    log::error!("Hashed body: {}", hashed_body);
+
+    // Check if the body hash is the same as the DKIM header body hash
+    if hashed_body != dkim_header.body_hash {
+        return Err(SMTPError::DKIMError("Invalid DKIM body hash".to_string()));
+    }
 
     Ok(record)
 }

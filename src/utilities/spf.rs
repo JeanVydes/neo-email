@@ -1,5 +1,5 @@
 use crate::{connection::SMTPConnection, errors::SMTPError};
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 use tokio::sync::Mutex;
 use trust_dns_resolver::TokioAsyncResolver;
 
@@ -190,17 +190,19 @@ impl SPFRecord {
 /// `policy` is the policy to apply
 /// `max_depth_redirect` is the maximum depth of redirects that the SPF record can have
 /// `max_include` is the maximum number of included SPF records
+/// 
+/// Returns a tuple with the result of the SPF check, the SPF record and the matched allowed IP pattern
 pub async fn sender_policy_framework<B>(
     conn: Arc<Mutex<SMTPConnection<B>>>,
     domain: &str,
     policy: SPFRecordAll,
     max_depth_redirect: u8,
     max_include: u8,
-) -> Result<(bool, SPFRecord), SMTPError> {
+) -> Result<(bool, SPFRecord, Option<String>), SMTPError> {
     // Lock the connection
     let conn = conn.lock().await;
     // Get the IP address of the sender
-    let ip = match conn.get_peer_addr().await {
+    let origin_ip = match conn.get_peer_addr().await {
         Ok(ip) => ip,
         Err(_) => return Err(SMTPError::SPFError("Failed to get IP address".to_string())),
     };
@@ -252,19 +254,69 @@ pub async fn sender_policy_framework<B>(
     }
 
     // Check if the IP is in the list of allowed IPs
-    let listed_ipv4_record = total_ipv4.iter().find(|record| *record == &ip.to_string());
+    let mut matched_allowed_ip_pattern: Option<String> = None;
+    for ipv4 in total_ipv4.iter() {
+        // Split the IP/CIDR
+        let parts = ipv4.split("/").collect::<Vec<&str>>();
+    
+        // Check if the IP is valid
+        if parts.len() != 2 {
+            continue;
+        }
+    
+        let allowed_ip = parts[0];
+        let cdir = parts[1];
+    
+        // Convert the IP to a number
+        let ip_num = allowed_ip
+            .split('.')
+            .map(|s| s.parse::<u32>().unwrap())
+            .fold(0, |acc, part| (acc << 8) + part);
+    
+        // Create the mask
+        let cdir_num = match cdir.parse::<u32>() {
+            Ok(num) => num,
+            Err(_) => continue,
+        };
 
-    // Check the policy based on the result
-    match (policy, listed_ipv4_record) {
+        // Create the mask
+        let mask = (0xffffffff as u32) << (32 - cdir_num);
+    
+        // Apply the mask
+        let ip_num = ip_num & mask;
+        // Get the IP from the peer IP
+        let origin_ip = origin_ip.ip();
+
+        // Example
+        // allowed ip: 130.211.0.0/22 from an allowed Gmail google server
+        // origin ip: 130.211.0.155 that is on /22 range of allowed IPs
+        // so supose, that email is sent from
+        // let origin_ip = IpAddr::V4(std::net::Ipv4Addr::new(130, 211, 0, 155));`
+
+        // Extract the IP number from the peer IP
+        if let IpAddr::V4(ipv4_addr) = origin_ip {
+            // Convert the IP to a number
+            let peer_ip_num = u32::from(ipv4_addr);
+    
+            // Check if the IP is in the range
+            if ip_num == (peer_ip_num & mask) {
+                matched_allowed_ip_pattern = Some(ipv4.to_string());
+                break;
+            }
+        }
+    }
+
+    // Check the policy based on the result 323 571 9840
+    match (policy, matched_allowed_ip_pattern.as_ref()) {
         // If the policy is Aggresive and the IP is on the list then return true
-        (SPFRecordAll::Aggresive, Some(_)) => Ok((true, record)),
+        (SPFRecordAll::Aggresive, Some(_)) => Ok((true, record, matched_allowed_ip_pattern)),
         // If the policy is Aggresive and the IP is not on the list then return an error
         (SPFRecordAll::Aggresive, None) => Err(SMTPError::SPFError("IP not allowed".to_string())),
         // If the policy is Passive and the IP is on the list then return true
-        (SPFRecordAll::Passive, Some(_)) => Ok((true, record)),
+        (SPFRecordAll::Passive, Some(_)) => Ok((true, record, matched_allowed_ip_pattern)),
         // If the policy is Passive and the IP is not on the list then return false
-        (SPFRecordAll::Passive, None) => Ok((false, record)),
+        (SPFRecordAll::Passive, None) => Ok((false, record, matched_allowed_ip_pattern)),
         // If the policy is Permissive then return true
-        (SPFRecordAll::Permissive, _) => Ok((true, record)),
+        (SPFRecordAll::Permissive, _) => Ok((true, record, matched_allowed_ip_pattern)),
     }
 }
