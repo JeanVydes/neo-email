@@ -6,21 +6,21 @@ authors = ["Jean Vides <jean@nervio.us>"]
 description = "The modern way to build emails services with Rust"
 repository = "https://github.com/JeanVydes/neo-email"
 readme = "README.md"
-license-file = "LICENSE"
+license = "MIT"
 keywords = ["smtp", "email", "mail", "tokio", "neo-email"]
 categories = ["network-programming", "asynchronous", "email"]
-documentation = "https://docs.rs/neo-email"
-homepage = "https://neo-email.crates.nervio.us"
 
 [dependencies]
 hashbrown = "0.14.5"
 log = "0.4.22"
-logger = "0.4.0"
 rayon = "1.10.0"
+regex = "1.10.5"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.121"
+sha2 = "0.10.8"
 tokio = { version = "1", features = ["full"] }
 tokio-native-tls = "0.3.1"
-tokio-tls = "0.3.1"
+trust-dns-resolver = "0.23.2"
 
 [features]
 smtp-experimental = []

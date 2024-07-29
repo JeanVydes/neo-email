@@ -6,22 +6,26 @@ use super::command::Commands;
 /// 
 /// This enum represents the possible errors that can occur in the SMTP server.
 #[derive(Debug)]
-pub enum SMTPError<'a> {
+pub enum SMTPError {
     IoError(std::io::Error),
-    ParseError(&'a str),
+    ParseError(String),
+    DKIMError(String),
+    SPFError(String),
     UnknownCommand(Commands),
-    CustomError(&'a str),
+    CustomError(String),
 }
 
-impl <'a> fmt::Display for SMTPError<'a> {
+impl fmt::Display for SMTPError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SMTPError::IoError(err) => write!(f, "IO Error: {}", err),
             SMTPError::ParseError(err) => write!(f, "Parse Error: {}", err),
+            SMTPError::DKIMError(err) => write!(f, "DKIM Error: {}", err),
+            SMTPError::SPFError(err) => write!(f, "SPF Error: {}", err),
             SMTPError::UnknownCommand(cmd) => write!(f, "Unknown Command: {:?}", cmd),
             SMTPError::CustomError(msg) => write!(f, "Custom Error: {}", msg),
         }
     }
 }
 
-impl <'a> std::error::Error for SMTPError<'a> {}
+impl std::error::Error for SMTPError {}

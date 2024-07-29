@@ -1,6 +1,5 @@
-use std::str::from_utf8;
-
-use hashbrown::HashMap;
+use core::fmt;
+use std::str::{from_utf8, FromStr};
 use serde::{Deserialize, Serialize};
 
 /// # Email Headers
@@ -232,127 +231,30 @@ pub enum EmailHeaders {
 }
 
 impl EmailHeaders {
-    pub fn get_header_hashmap() -> HashMap<String, EmailHeaders> {
-        vec![
-            ("Accept-Language", EmailHeaders::AcceptLanguage),
-            ("Alternate-Recipient", EmailHeaders::AlternateRecipient),
-            #[cfg(feature = "smtp-experimental")]
-            ("ARC-Authentication-Results", EmailHeaders::ARCAuthenticationResults),
-            #[cfg(feature = "smtp-experimental")]
-            ("ARC-Message-Signature", EmailHeaders::ARCMessageSignature),
-            #[cfg(feature = "smtp-experimental")]
-            ("ARC-Seal", EmailHeaders::ARCSeal),
-            ("Archived-At", EmailHeaders::ArchivedAt),
-            ("Authentication-Results", EmailHeaders::AuthenticationResults),
-            ("Auto-Submitted", EmailHeaders::AutoSubmitted),
-            ("Autoforwarded", EmailHeaders::AutoForwarded),
-            ("Autosubmitted", EmailHeaders::Autosubmitted),
-            ("Bcc", EmailHeaders::Bcc),
-            ("Cc", EmailHeaders::Cc),
-            ("Comments", EmailHeaders::Comments),
-            ("Content-Identifier", EmailHeaders::ContentIdentifier),
-            ("Content-Return", EmailHeaders::ContentReturn),
-            ("Conversion", EmailHeaders::Conversion),
-            ("Conversion-With-Loss", EmailHeaders::ConversionWithLoss),
-            ("DL-Expansion-History", EmailHeaders::DLExpansionHistory),
-            ("Date", EmailHeaders::Date),
-            ("Deferred-Delivery", EmailHeaders::DeferredDelivery),
-            ("Delivery-Date", EmailHeaders::DeliveryDate),
-            ("Discarded-X400-IPMS-Extensions", EmailHeaders::DiscardedX400IPMSExtensions),
-            ("Discarded-X400-MTS-Extensions", EmailHeaders::DiscardedX400MTSExtensions),
-            ("Disclose-Recipients", EmailHeaders::DiscloseRecipients),
-            ("Disposition-Notification-Options", EmailHeaders::DispositionNotificationOptions),
-            ("Disposition-Notification-To", EmailHeaders::DispositionNotificationTo),
-            ("DKIM-Signature", EmailHeaders::DKIMSignature),
-            ("Downgraded-Final-Recipient", EmailHeaders::DowngradedFinalRecipient),
-            ("Downgraded-In-Reply-To", EmailHeaders::DowngradedInReplyTo),
-            ("Downgraded-Message-Id", EmailHeaders::DowngradedMessageId),
-            ("Downgraded-Original-Recipient", EmailHeaders::DowngradedOriginalRecipient),
-            ("Downgraded-References", EmailHeaders::DowngradedReferences),
-            ("Encoding", EmailHeaders::Encoding),
-            ("Encrypted", EmailHeaders::Encrypted),
-            ("Expires", EmailHeaders::Expires),
-            ("Expiry-Date", EmailHeaders::ExpiryDate),
-            ("From", EmailHeaders::From),
-            ("Generate-Delivery-Report", EmailHeaders::GenerateDeliveryReport),
-            ("Importance", EmailHeaders::Importance),
-            ("In-Reply-To", EmailHeaders::InReplyTo),
-            ("Incomplete-Copy", EmailHeaders::IncompleteCopy),
-            ("Keywords", EmailHeaders::Keywords),
-            ("Language", EmailHeaders::Language),
-            ("Latest-Delivery-Time", EmailHeaders::LatestDeliveryTime),
-            ("List-Archive", EmailHeaders::ListArchive),
-            ("List-Help", EmailHeaders::ListHelp),
-            ("List-Id", EmailHeaders::ListId),
-            ("List-Owner", EmailHeaders::ListOwner),
-            ("List-Post", EmailHeaders::ListPost),
-            ("List-Subscribe", EmailHeaders::ListSubscribe),
-            ("List-Unsubscribe", EmailHeaders::ListUnsubscribe),
-            ("List-Unsubscribe-Post", EmailHeaders::ListUnsubscribePost),
-            ("Message-Context", EmailHeaders::MessageContext),
-            ("Message-Id", EmailHeaders::MessageId),
-            ("Message-Type", EmailHeaders::MessageType),
-            ("MT-Priority", EmailHeaders::MTPriority),
-            ("Obsoletes", EmailHeaders::Obsoletes),
-            ("Organization", EmailHeaders::Organization),
-            ("Original-Encoded-Information-Types", EmailHeaders::OriginalEncodedInformationTypes),
-            ("Original-From", EmailHeaders::OriginalFrom),
-            ("Original-Message-Id", EmailHeaders::OriginalMessageId),
-            ("Original-Recipient", EmailHeaders::OriginalRecipient),
-            ("Originator-Return-Address", EmailHeaders::OriginatorReturnAddress),
-            ("Original-Subject", EmailHeaders::OriginalSubject),
-            ("PICS-Label", EmailHeaders::PICSLabel),
-            ("Prevent-NonDelivery-Report", EmailHeaders::PreventNonDeliveryReport),
-            ("Priority", EmailHeaders::Priority),
-            ("Received", EmailHeaders::Received),
-            ("Received-SPF", EmailHeaders::ReceivedSPF),
-            ("References", EmailHeaders::References),
-            ("Reply-By", EmailHeaders::ReplyBy),
-            ("Reply-To", EmailHeaders::ReplyTo),
-            ("Require-Recipient-Valid-Since", EmailHeaders::RequireRecipientValidSince),
-            ("Resent-Bcc", EmailHeaders::ResentBcc),
-            ("Resent-Cc", EmailHeaders::ResentCc),
-            ("Resent-Date", EmailHeaders::ResentDate),
-            ("Resent-From", EmailHeaders::ResentFrom),
-            ("Resent-Message-Id", EmailHeaders::ResentMessageId),
-            ("Resent-Reply-To", EmailHeaders::ResentReplyTo),
-            ("Resent-Sender", EmailHeaders::ResentSender),
-            ("Resent-To", EmailHeaders::ResentTo),
-            ("Return-Path", EmailHeaders::ReturnPath),
-            ("Sender", EmailHeaders::Sender),
-            ("Sensitivity", EmailHeaders::Sensitivity),
-            ("Solicitation", EmailHeaders::Solicitation),
-            ("Subject", EmailHeaders::Subject),
-            ("Supersedes", EmailHeaders::Supersedes),
-            ("TLS-Report-Domain", EmailHeaders::TLSReportDomain),
-            ("TLS-Report-Submitter", EmailHeaders::TLSReportSubmitter),
-            ("TlS-Required", EmailHeaders::TLSRequired),
-            ("To", EmailHeaders::To),
-            ("VBR-Info", EmailHeaders::VBRInfo),
-            ("X400-Content-Identifier", EmailHeaders::X400ContentIdentifier),
-            ("X400-Content-Return", EmailHeaders::X400ContentReturn),
-            ("X400-Content-Type", EmailHeaders::X400ContentType),
-            ("X400-MTS-Identifier", EmailHeaders::X400MTSIdentifier),
-            ("X400-Originator", EmailHeaders::X400Originator),
-            ("X400-Received", EmailHeaders::X400Received),
-            ("X400-Recipients", EmailHeaders::X400Recipients),
-            ("X400-Trace", EmailHeaders::X400Trace),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect()
-    }
-
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         // Convert bytes to string and trim any whitespace
         let s = from_utf8(bytes).map_err(|_| "Invalid header")?.trim().to_string();
 
-        let header_map = Self::get_header_hashmap();
+        // Use serde_json to deserialize the string into EmailHeaders enum
+        serde_json::from_str(&format!("\"{}\"", s)).map_err(|_| "Unknown header".to_string())
+    }
+}
 
-        // Look up the header in the map
-        header_map
-            .get(&s[..])
-            .cloned()
-            .ok_or_else(|| "Unknown header".to_string())
+impl FromStr for EmailHeaders {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Use serde_json to deserialize the string into EmailHeaders enum
+        serde_json::from_str(&format!("\"{}\"", s))
+    }
+}
+
+// Implement fmt::Display trait to convert EmailHeaders enum to string
+impl fmt::Display for EmailHeaders {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Use serde_json to serialize the EmailHeaders enum to a string
+        let serialized = serde_json::to_string(self).map_err(|_| fmt::Error)?;
+        // Remove the surrounding quotes from the serialized string
+        write!(f, "{}", &serialized[1..serialized.len() - 1])
     }
 }

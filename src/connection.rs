@@ -6,6 +6,7 @@ use tokio::{io::BufStream, net::TcpStream, sync::Mutex};
 use tokio_native_tls::TlsStream;
 use tokio::io::AsyncWriteExt;
 use tokio::io::AsyncReadExt;
+use trust_dns_resolver::TokioAsyncResolver;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SMTPConnectionStatus {
@@ -18,7 +19,7 @@ pub enum SMTPConnectionStatus {
 /// # SMTP Connection
 /// 
 /// This struct represents a connection to the SMTP server with the necessary information.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SMTPConnection<T> {
     pub use_tls: bool,
     pub tls_buff_socket: Option<Arc<Mutex<BufStream<TlsStream<TcpStream>>>>>,
@@ -26,6 +27,7 @@ pub struct SMTPConnection<T> {
     pub buffer: Vec<u8>,
     pub mail_buffer: Vec<u8>,
     pub status: SMTPConnectionStatus,
+    pub dns_resolver: Arc<Mutex<TokioAsyncResolver>>,
     pub state: Arc<Mutex<T>>,
 }
 

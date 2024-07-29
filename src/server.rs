@@ -4,9 +4,13 @@ use tokio::io::BufStream;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_native_tls::TlsAcceptor;
+use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+use trust_dns_resolver::TokioAsyncResolver;
 
 use crate::client_message::ClientMessage;
 use crate::controllers::on_auth::OnAuthController;
+use crate::controllers::on_mail::OnMailCommandController;
+use crate::controllers::on_rcpt::OnRCPTCommandController;
 use crate::mail::Mail;
 
 use super::command::Commands;
@@ -22,7 +26,6 @@ use super::status_code::StatusCodes;
 /// # SMTPServer
 ///
 /// This struct is responsible for holding the SMTPServer configuration and state.
-#[derive(Debug)]
 pub struct SMTPServer<B> {
     /// # use_tls
     ///
@@ -57,6 +60,7 @@ pub struct SMTPServer<B> {
 
     max_session_duration: Duration,
     max_op_duration: Duration,
+    dns_resolver: Arc<Mutex<TokioAsyncResolver>>,
 }
 
 /// # Controllers
@@ -68,6 +72,8 @@ pub struct Controllers<B> {
     on_email: Option<OnEmailController<B>>,
     on_reset: Option<OnResetController<B>>,
     on_close: Option<OnCloseController<B>>,
+    on_mail_cmd: Option<OnMailCommandController<B>>,
+    on_rcpt_cmd: Option<OnRCPTCommandController<B>>,
 }
 
 /// # Clone for Controllers
@@ -83,6 +89,8 @@ where
             on_email: self.on_email.clone(),
             on_reset: self.on_reset.clone(),
             on_close: self.on_close.clone(),
+            on_mail_cmd: self.on_mail_cmd.clone(),
+            on_rcpt_cmd: self.on_rcpt_cmd.clone(),
         }
     }
 }
@@ -92,6 +100,10 @@ impl<B> SMTPServer<B> {
     ///
     /// Create a new SMTPServer with default values.
     pub fn new() -> Self {
+        let dns_resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+
+        let dns_resolver = Arc::new(Mutex::new(dns_resolver));
+        
         SMTPServer {
             use_tls: false,
             listener: None,
@@ -103,6 +115,8 @@ impl<B> SMTPServer<B> {
                 on_email: None,
                 on_reset: None,
                 on_close: None,
+                on_mail_cmd: None,
+                on_rcpt_cmd: None,
             },
             max_size: 1024 * 1024 * 10, // 10MB
             allowed_commands: vec![
@@ -122,6 +136,7 @@ impl<B> SMTPServer<B> {
             ],
             max_session_duration: Duration::from_secs(300),
             max_op_duration: Duration::from_secs(30),
+            dns_resolver,
         }
     }
 
@@ -209,6 +224,18 @@ impl<B> SMTPServer<B> {
         self
     }
 
+    pub fn on_mail_cmd(&mut self, on_mail_cmd: OnMailCommandController<B>) -> &mut Self {
+        log::info!("Setting OnMailCommandController");
+        self.controllers.on_mail_cmd = Some(on_mail_cmd);
+        self
+    }
+
+    pub fn on_rcpt_cmd(&mut self, on_rcpt_cmd: OnRCPTCommandController<B>) -> &mut Self {
+        log::info!("Setting OnRCPTCommandController");
+        self.controllers.on_rcpt_cmd = Some(on_rcpt_cmd);
+        self
+    }
+
     pub fn set_max_session_duration(&mut self, duration: Duration) -> &mut Self {
         log::info!("Setting max session duration to {:?}", duration);
         self.max_session_duration = duration;
@@ -280,6 +307,7 @@ impl<B> SMTPServer<B> {
             let allowed_commands = self.allowed_commands.clone();
             let max_session_duration = self.max_session_duration;
             let max_op_duration = self.max_op_duration;
+            let dns_resolver = self.dns_resolver.clone();
 
             // Spawn a new task to handle the connection
             tokio::spawn(async move {
@@ -293,6 +321,7 @@ impl<B> SMTPServer<B> {
                     buffer: Vec::new(),
                     mail_buffer: Vec::new(),
                     status: SMTPConnectionStatus::WaitingCommand,
+                    dns_resolver,
                     state: Arc::new(Mutex::new(B::default())),
                 }));
 
@@ -892,20 +921,40 @@ where
 
             (ehlo_messages, SMTPConnectionStatus::WaitingCommand)
         }
-        Commands::MAIL => (
-            vec![Message::builder()
-                .status(StatusCodes::OK)
-                .message("Hello".to_string())
-                .build()],
-            SMTPConnectionStatus::WaitingCommand,
-        ),
-        Commands::RCPT => (
-            vec![Message::builder()
-                .status(StatusCodes::OK)
-                .message("Hello".to_string())
-                .build()],
-            SMTPConnectionStatus::WaitingCommand,
-        ),
+        Commands::MAIL => {
+            if let Some(on_mail_cmd) = &controllers.on_mail_cmd {
+                let on_mail_cmd = on_mail_cmd.0.clone();
+                match on_mail_cmd(conn.clone(), client_message.data.clone()).await {
+                    Ok(response) => return Ok((vec![response], SMTPConnectionStatus::WaitingCommand)),
+                    Err(response) => return Ok((vec![response], SMTPConnectionStatus::Closed)),
+                }
+            } else {
+                (
+                    vec![Message::builder()
+                        .status(StatusCodes::OK)
+                        .message("Ok".to_string())
+                        .build()],
+                    SMTPConnectionStatus::WaitingCommand,
+                )
+            }
+        },
+        Commands::RCPT => {
+            if let Some(on_rcpt_cmd) = &controllers.on_rcpt_cmd {
+                let on_rcpt_cmd = on_rcpt_cmd.0.clone();
+                match on_rcpt_cmd(conn.clone(), client_message.data.clone()).await {
+                    Ok(response) => return Ok((vec![response], SMTPConnectionStatus::WaitingCommand)),
+                    Err(response) => return Ok((vec![response], SMTPConnectionStatus::Closed)),
+                }
+            } else {
+                (
+                    vec![Message::builder()
+                        .status(StatusCodes::OK)
+                        .message("Ok".to_string())
+                        .build()],
+                    SMTPConnectionStatus::WaitingCommand,
+                )
+            }
+        },
         Commands::DATA => (
             vec![Message::builder()
                 .status(StatusCodes::StartMailInput)

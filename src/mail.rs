@@ -55,6 +55,8 @@ impl<T> Mail<T> {
             let key = parts.next().ok_or("Invalid header")?;
             let value = parts.next().ok_or("Invalid header value not exist")?;
             let value = from_utf8(value).map_err(|_| "Invalid header value")?.trim();
+            let value = value.split_whitespace().collect::<Vec<&str>>().join(" ");
+            
             headers.insert(EmailHeaders::from_bytes(key)?, value.to_owned());
         }
 

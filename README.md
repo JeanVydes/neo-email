@@ -1,6 +1,6 @@
 # NEO EMAIL
 
-The modern way to build emails services with Rust
+Neo Email is a cutting-edge Rust crate designed for modern email handling, focusing on robust and secure email systems. It provides comprehensive support for crafting, sending, and validating emails, integrating the latest standards and practices in email technology.
 
 ## Features
 
@@ -9,6 +9,7 @@ The modern way to build emails services with Rust
 * Customization
 * Like build a HTTP API
 * Open Source
+* Built-in Utilities like SPF
 
 ## Examples
 
@@ -17,12 +18,12 @@ use std::{net::SocketAddr, sync::Arc};
 
 use neo_email::{
     connection::SMTPConnection,
-    controllers::{on_auth::OnAuthController, on_email::OnEmailController},
+    controllers::{on_auth::OnAuthController, on_email::OnEmailController, on_mail::OnMailCommandController},
     headers::EmailHeaders,
     mail::Mail,
     message::Message,
     server::SMTPServer,
-    status_code::StatusCodes,
+    status_code::StatusCodes, utilities::spf::{sender_policy_framework, SPFRecordAll},
 };
 use tokio::sync::Mutex;
 
@@ -42,6 +43,8 @@ async fn main() {
         .on_auth(OnAuthController::new(on_auth))
         // Set an controller to dispatch when an email is received
         .on_email(OnEmailController::new(on_email))
+        // Set an controller to dispatch when a mail command is received
+        .on_mail_cmd(OnMailCommandController::new(on_mail_cmd))
         // Bind the server to the address
         .bind(addr)
         .await
@@ -100,6 +103,50 @@ pub async fn on_email(
         .status(neo_email::status_code::StatusCodes::OK)
         .message("Email received".to_string())
         .build()
+}
+
+// This function is called when a mail command is received, usually is to indicate the sender of the email
+// Here you can apply the SPF check
+pub async fn on_mail_cmd(conn: Arc<Mutex<SMTPConnection<ConnectionState>>>, data: String) -> Result<Message, Message> {
+    // `data` give you the raw data, usually like this `FROM:<email@nervio.us> SIZE:123`
+    let email_domain = "gmail.com"; // example domain
+
+    // Apply the SPF check
+    match sender_policy_framework(
+        conn.clone(),
+        // The domain to check the SPF record, usually the sender email domain
+        email_domain,
+        // Passive allow emails that aren't send on domain behalf, but are spam.
+        SPFRecordAll::Passive,
+        // Max depth of redirects, the SPF record can redirect to another domain, and this domain can redirect to another domain, and so on.
+        3,
+        // Max includes, the SPF record can include another SPF record.
+        3,
+    ).await {
+        // The SPF pass your check and return the SPFRecord (including, the included ones)
+        Ok((pass, _record)) => {
+            if !pass {
+                return Err(Message::builder()
+                    .status(StatusCodes::TransactionFailed)
+                    .message("SPF failed".to_string())
+                    .build());
+            }
+        },
+        // The SPF failed, return an error, can be the DNS (1.1.1.1 by default) or a parsing error
+        Err(e) => {
+            // Decline the transaction and close connection
+            return Err(Message::builder()
+                .status(StatusCodes::TransactionFailed)
+                .message("SPF failed".to_string())
+                .build());
+        }
+    }
+
+    // If the email pass the SPF check, you can continue with your logic, but if it fails, you can return an error with Err(Message) and connection will be closed peacefully
+    Ok(Message::builder()
+        .status(StatusCodes::OK)
+        .message("Mail command received".to_string())
+        .build())
 }
 ```
 
