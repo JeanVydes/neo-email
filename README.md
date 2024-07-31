@@ -5,7 +5,7 @@
 ![Downloads](https://img.shields.io/crates/d/neo-email)
 ![GitHub Repo stars](https://img.shields.io/github/stars/JeanVydes/neo-email)
 
-Neo Email is a cutting-edge Rust crate designed for modern email handling, focusing on robust and secure email systems. It provides comprehensive support for crafting, sending, and validating emails, integrating the latest standards and practices in email technology.
+Neo Email is a cutting-edge Rust crate designed for modern email handling, focusing on robust and secure email systems, integrating the latest standards and practices in email technology.
 
 ## Install
 
