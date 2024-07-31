@@ -230,6 +230,7 @@ impl SPFRecord {
 /// # sender_policy_framework
 ///
 /// Check if the sender is allowed to send emails on behalf of the domain
+/// 
 /// `conn` is the SMTP connection
 /// `domain` is the domain to check the SPF record
 /// `policy` is the policy to apply

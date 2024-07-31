@@ -23,6 +23,10 @@ pub enum SMTPError {
     /// 
     /// This error occurs when there is a SPF error.
     SPFError(String),
+    /// # DMARC Error
+    /// 
+    /// This error occurs when there is a DMARC error.
+    DMARCError(String),
     /// # DNS Error
     /// 
     /// This error occurs when there is a DNS error.
@@ -45,6 +49,7 @@ impl fmt::Display for SMTPError {
             SMTPError::ParseError(err) => write!(f, "Parse Error: {}", err),
             SMTPError::DKIMError(err) => write!(f, "DKIM Error: {}", err),
             SMTPError::SPFError(err) => write!(f, "SPF Error: {}", err),
+            SMTPError::DMARCError(err) => write!(f, "DMARC Error: {}", err),
             SMTPError::DNSError(err) => write!(f, "DNS Error: {}", err),
             SMTPError::UnknownCommand(cmd) => write!(f, "Unknown Command: {:?}", cmd),
             SMTPError::CustomError(msg) => write!(f, "Custom Error: {}", msg),
