@@ -5,11 +5,11 @@ use serde::{Deserialize, Serialize};
 use super::{command::Commands, errors::SMTPError};
 
 /// # Client Message
-/// 
+///
 /// This struct represents a message from the client to the server.
 /// It contains the command and the data.
 /// Usually they are like this:
-/// 
+///
 /// ```
 /// HELO example.com
 /// MAIL FROM: <...>
@@ -26,11 +26,11 @@ pub struct ClientMessage<T> {
 }
 
 /// # Client Message
-/// 
+///
 /// This implementation is for the ClientMessage struct.
 impl<T> ClientMessage<T> {
     /// # From Bytes
-    /// 
+    ///
     /// This function converts a byte array to a ClientMessage struct.
     pub fn from_bytes<'a>(bytes: Vec<u8>) -> Result<ClientMessage<T>, SMTPError>
     where
@@ -41,12 +41,16 @@ impl<T> ClientMessage<T> {
         let message = match String::from_utf8(bytes.to_vec()) {
             Ok(cmd) => cmd,
             // If it fails, return an error
-            Err(_) => return Err(SMTPError::ParseError("Cannot convert to String from bytes".to_owned())),
+            Err(_) => {
+                return Err(SMTPError::ParseError(
+                    "Cannot convert to String from bytes".to_owned(),
+                ))
+            }
         };
 
         // Split the message by spaces
         let mut parts = message.split(" ");
-    
+
         // Get the command
         let cmd = match parts.next() {
             Some(cmd) => cmd.to_string(),
@@ -54,7 +58,7 @@ impl<T> ClientMessage<T> {
                 // If there is no command, return an error
                 return Err(SMTPError::ParseError(
                     "Invalid Message, Message doesn't contain COMMAND".to_owned(),
-                ))
+                ));
             }
         };
 
@@ -65,6 +69,9 @@ impl<T> ClientMessage<T> {
         // Convert the command to a Commands enum
         let command = Commands::from_bytes(cmd.as_bytes());
         // Return the ClientMessage
-        Ok(ClientMessage { command, data: data.into() })
+        Ok(ClientMessage {
+            command,
+            data: data.into(),
+        })
     }
 }

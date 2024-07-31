@@ -3,7 +3,7 @@ use std::fmt;
 use super::command::Commands;
 
 /// # SMTP Error
-/// 
+///
 /// This enum represents the possible errors that can occur in the SMTP server.
 #[derive(Debug)]
 pub enum SMTPError {

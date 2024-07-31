@@ -1,14 +1,22 @@
+use crate::{connection::SMTPConnection, message::Message};
 use core::fmt;
 use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::sync::Mutex;
-use crate::{connection::SMTPConnection, message::Message};
 
 /// # OnRCPTController
 ///
 /// This struct represents a controller that is called when auth command is received.
 #[derive(Clone)]
 pub struct OnRCPTCommandController<B>(
-    pub Arc<dyn Fn(Arc<Mutex<SMTPConnection<B>>>, String) -> Pin<Box<dyn Future<Output = Result<Message, Message>> + Send>> + Send + Sync + 'static>,
+    pub  Arc<
+        dyn Fn(
+                Arc<Mutex<SMTPConnection<B>>>,
+                String,
+            ) -> Pin<Box<dyn Future<Output = Result<Message, Message>> + Send>>
+            + Send
+            + Sync
+            + 'static,
+    >,
 );
 
 impl<B> OnRCPTCommandController<B> {
@@ -21,7 +29,8 @@ impl<B> OnRCPTCommandController<B> {
         Fut: Future<Output = Result<Message, Message>> + Send + 'static,
     {
         let wrapped_fn = move |conn: Arc<Mutex<SMTPConnection<B>>>, data: String| {
-            Box::pin(f(conn, data)) as Pin<Box<dyn Future<Output = Result<Message, Message>> + Send>>
+            Box::pin(f(conn, data))
+                as Pin<Box<dyn Future<Output = Result<Message, Message>> + Send>>
         };
 
         OnRCPTCommandController(Arc::new(wrapped_fn))

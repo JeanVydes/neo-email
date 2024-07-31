@@ -3,11 +3,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::time::timeout;
 use tokio::{io::BufStream, net::TcpStream, sync::Mutex};
 use tokio_native_tls::TlsStream;
-use tokio::io::AsyncWriteExt;
-use tokio::io::AsyncReadExt;
 use trust_dns_resolver::TokioAsyncResolver;
 
 use crate::command::Commands;
@@ -21,7 +21,7 @@ pub enum SMTPConnectionStatus {
 }
 
 /// # SMTP Connection
-/// 
+///
 /// This struct represents a connection to the SMTP server with the necessary information.
 #[derive(Clone)]
 pub struct SMTPConnection<T> {
@@ -47,7 +47,7 @@ pub struct SMTPConnection<T> {
 
 impl<T> SMTPConnection<T> {
     /// # New
-    /// 
+    ///
     /// This function creates a new SMTPConnection.
     pub async fn write_socket(&self, data: &[u8]) -> std::io::Result<()> {
         if self.use_tls {
@@ -69,7 +69,7 @@ impl<T> SMTPConnection<T> {
     }
 
     /// # Read Socket
-    /// 
+    ///
     /// This function reads from the socket.
     /// Depending on the connection, it will read from the TLS socket or the TCP socket.
     pub async fn read_socket(&self, data: &mut [u8]) -> std::io::Result<usize> {
@@ -92,15 +92,22 @@ impl<T> SMTPConnection<T> {
         }
     }
 
-    pub async fn get_peer_addr(&self) -> std::io::Result<SocketAddr>
-    {
+    pub async fn get_peer_addr(&self) -> std::io::Result<SocketAddr> {
         if self.use_tls {
             if let Some(tls_buff_socket) = &self.tls_buff_socket {
                 let tls_buff_socket = tls_buff_socket.lock().await;
-                Ok(tls_buff_socket.get_ref().get_ref().get_ref().get_ref().peer_addr()?)
+                Ok(tls_buff_socket
+                    .get_ref()
+                    .get_ref()
+                    .get_ref()
+                    .get_ref()
+                    .peer_addr()?)
             } else {
                 log::trace!("[🚫] No socket to read from");
-                Err(std::io::Error::new(std::io::ErrorKind::Other, "No socket to read from"))
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "No socket to read from",
+                ))
             }
         } else {
             if let Some(tcp_buff_socket) = &self.tcp_buff_socket {
@@ -108,7 +115,10 @@ impl<T> SMTPConnection<T> {
                 Ok(tcp_buff_socket.get_ref().peer_addr()?)
             } else {
                 log::trace!("[🚫] No socket to read from");
-                Err(std::io::Error::new(std::io::ErrorKind::Other, "No socket to read from"))
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "No socket to read from",
+                ))
             }
         }
     }
@@ -121,8 +131,7 @@ impl<T> SMTPConnection<T> {
         }
     }
 
-    pub async fn get_tcp_buffer(&self) -> Option<Arc<Mutex<BufStream<TcpStream>>>>
-    {
+    pub async fn get_tcp_buffer(&self) -> Option<Arc<Mutex<BufStream<TcpStream>>>> {
         if !self.use_tls {
             self.tcp_buff_socket.clone()
         } else {

@@ -1,7 +1,7 @@
 use super::status_code::StatusCodes;
 
 /// # Message
-/// 
+///
 /// This struct represents a message to be sent to the client.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
@@ -10,7 +10,7 @@ pub struct Message {
 }
 
 /// # Message Builder
-/// 
+///
 /// This struct is a builder for the Message struct.
 #[derive(Debug, Clone, Default)]
 pub struct MessageBuilder {
@@ -41,7 +41,7 @@ impl Message {
     }
 
     /// # As Bytes
-    /// 
+    ///
     /// This function converts the message to bytes.
     pub fn as_bytes(&self, is_last: bool) -> Vec<u8> {
         self.to_string(is_last).as_bytes().to_vec()

@@ -6,25 +6,25 @@ use super::headers::EmailHeaders;
 use hashbrown::HashMap;
 
 /// # Mail
-/// 
+///
 /// This struct represents an email message.
-/// 
+///
 /// ## Fields
-/// 
+///
 /// * `headers` - A HashMap of EmailHeaders and its values.
 /// * `body` - The body of the email.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Mail<T> {
     /// # Headers
-    /// 
+    ///
     /// A HashMap of EmailHeaders and its values.
-    /// 
+    ///
     /// ## Example
-    /// 
+    ///
     /// `From -> "jean@nervio.us"`
     pub headers: HashMap<EmailHeaders, String>,
     /// # Body
-    /// 
+    ///
     /// The body of the email.
     pub body: T,
 }
@@ -44,7 +44,7 @@ impl<T> Mail<T> {
                 header_complete = true;
                 break;
             }
-            
+
             if let Some(&b' ') | Some(&b'\t') = line.first() {
                 if let Some(last_header) = headers.keys().last().cloned() {
                     let value: &mut String = headers.get_mut(&last_header).unwrap();
@@ -58,7 +58,7 @@ impl<T> Mail<T> {
             let value = parts.next().ok_or("Invalid header value not exist")?;
             let value = from_utf8(value).map_err(|_| "Invalid header value")?.trim();
             let value = value.split_whitespace().collect::<Vec<&str>>().join(" ");
-            
+
             headers.insert(EmailHeaders::from_bytes(key)?, value.to_owned());
         }
 
@@ -71,7 +71,10 @@ impl<T> Mail<T> {
             return Err("Invalid mail format".to_string());
         }
 
-        Ok(Mail { headers, body: body.into() })
+        Ok(Mail {
+            headers,
+            body: body.into(),
+        })
     }
 }
 
@@ -103,9 +106,15 @@ pub struct EmailAddress {
 impl EmailAddress {
     pub fn from_string(data: &str) -> Result<Self, SMTPError> {
         let mut parts = data.split('@');
-        let username = parts.next().ok_or(SMTPError::ParseError("Invalid email address".to_string()))?.to_owned();
-        let domain = parts.next().ok_or(SMTPError::ParseError("Invalid email address".to_string()))?.to_owned();
-    
+        let username = parts
+            .next()
+            .ok_or(SMTPError::ParseError("Invalid email address".to_string()))?
+            .to_owned();
+        let domain = parts
+            .next()
+            .ok_or(SMTPError::ParseError("Invalid email address".to_string()))?
+            .to_owned();
+
         if domain.is_empty() {
             return Err(SMTPError::ParseError("Invalid email address".to_string()));
         }

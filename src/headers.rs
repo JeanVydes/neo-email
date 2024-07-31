@@ -1,9 +1,9 @@
 use core::fmt;
-use std::str::{from_utf8, FromStr};
 use serde::{Deserialize, Serialize};
+use std::str::{from_utf8, FromStr};
 
 /// # Email Headers
-/// 
+///
 /// The headers that a email can contain.
 /// [https://www.iana.org/assignments/message-headers/message-headers.xhtml](https://www.iana.org/assignments/message-headers/message-headers.xhtml)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

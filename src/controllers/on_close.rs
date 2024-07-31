@@ -13,7 +13,7 @@ pub struct OnCloseController<B>(
     pub Arc<dyn Fn(Arc<Mutex<SMTPConnection<B>>>) -> () + Send + Sync + 'static>,
 );
 
-impl <B> OnCloseController<B> {
+impl<B> OnCloseController<B> {
     /// # New
     ///
     /// This function creates a new OnCloseController.
@@ -28,7 +28,7 @@ impl <B> OnCloseController<B> {
     }
 }
 
-impl <B> fmt::Debug for OnCloseController<B> {
+impl<B> fmt::Debug for OnCloseController<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Closure")
     }

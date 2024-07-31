@@ -13,7 +13,7 @@ pub struct OnResetController<B>(
     pub Arc<dyn Fn(Arc<Mutex<SMTPConnection<B>>>) -> () + Send + Sync + 'static>,
 );
 
-impl <B> OnResetController<B> {
+impl<B> OnResetController<B> {
     /// # New
     ///
     /// This function creates a new OnResetController.
@@ -28,7 +28,7 @@ impl <B> OnResetController<B> {
     }
 }
 
-impl <B> fmt::Debug for OnResetController<B> {
+impl<B> fmt::Debug for OnResetController<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Closure")
     }

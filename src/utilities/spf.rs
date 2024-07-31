@@ -26,7 +26,7 @@ pub struct SPFRecord {
     pub version: String,               // Always should be v=spf1
     pub ipv4: Vec<String>,             // List of allowed IPs
     pub all: SPFRecordAll,             // Policy to apply
-    pub root_include: Vec<String>,          // List of to include SPF records
+    pub root_include: Vec<String>,     // List of to include SPF records
     pub included: Box<Vec<SPFRecord>>, // Included SPF records
     pub redirect: Option<String>,      // Redirect to another domain
 }
@@ -190,7 +190,7 @@ impl SPFRecord {
 /// `policy` is the policy to apply
 /// `max_depth_redirect` is the maximum depth of redirects that the SPF record can have
 /// `max_include` is the maximum number of included SPF records
-/// 
+///
 /// Returns a tuple with the result of the SPF check, the SPF record and the matched allowed IP pattern
 pub async fn sender_policy_framework<B>(
     conn: Arc<Mutex<SMTPConnection<B>>>,
@@ -228,17 +228,20 @@ pub async fn sender_policy_framework<B>(
                 break;
             }
             // For now this included_records cant include other, but allow redirect
-            let included_record =
-                match SPFRecord::get_dns_spf_record(max_depth_redirect, conn.dns_resolver.clone(), include.as_str())
-                    .await
-                {
-                    Ok(record) => record,
-                    Err(_) => {
-                        return Err(SMTPError::SPFError(
-                            "Failed to get included SPF record".to_string(),
-                        ))
-                    }
-                };
+            let included_record = match SPFRecord::get_dns_spf_record(
+                max_depth_redirect,
+                conn.dns_resolver.clone(),
+                include.as_str(),
+            )
+            .await
+            {
+                Ok(record) => record,
+                Err(_) => {
+                    return Err(SMTPError::SPFError(
+                        "Failed to get included SPF record".to_string(),
+                    ))
+                }
+            };
             // Add the included record to the SPF record
             record.included.push(included_record);
             // Decrement the counter
@@ -258,21 +261,21 @@ pub async fn sender_policy_framework<B>(
     for ipv4 in total_ipv4.iter() {
         // Split the IP/CIDR
         let parts = ipv4.split("/").collect::<Vec<&str>>();
-    
+
         // Check if the IP is valid
         if parts.len() != 2 {
             continue;
         }
-    
+
         let allowed_ip = parts[0];
         let cdir = parts[1];
-    
+
         // Convert the IP to a number
         let ip_num = allowed_ip
             .split('.')
             .map(|s| s.parse::<u32>().unwrap())
             .fold(0, |acc, part| (acc << 8) + part);
-    
+
         // Create the mask
         let cdir_num = match cdir.parse::<u32>() {
             Ok(num) => num,
@@ -281,7 +284,7 @@ pub async fn sender_policy_framework<B>(
 
         // Create the mask
         let mask = (0xffffffff as u32) << (32 - cdir_num);
-    
+
         // Apply the mask
         let ip_num = ip_num & mask;
         // Get the IP from the peer IP
@@ -298,7 +301,7 @@ pub async fn sender_policy_framework<B>(
         if let IpAddr::V4(ipv4_addr) = origin_ip {
             // Convert the IP to a number
             let peer_ip_num = u32::from(ipv4_addr);
-    
+
             // Check if the IP is in the range
             if ip_num == (peer_ip_num & mask) {
                 matched_allowed_ip_pattern = Some(ipv4.to_string());

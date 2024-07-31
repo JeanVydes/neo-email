@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// # SMTP Status Codes
-/// 
+///
 /// This enum represents the status codes that the SMTP server can return.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum StatusCodes {
@@ -45,7 +45,9 @@ impl StatusCodes {
             StatusCodes::AuthenticationSuccessful => "235".to_string(),
             StatusCodes::OK => "250".to_string(),
             StatusCodes::UserNotLocalWillForward => "251".to_string(),
-            StatusCodes::CannotVerifyUserButWillAcceptMessageAndAttemptDelivery => "252".to_string(),
+            StatusCodes::CannotVerifyUserButWillAcceptMessageAndAttemptDelivery => {
+                "252".to_string()
+            }
             StatusCodes::StartMailInput => "354".to_string(),
             StatusCodes::ServiceNotAvailable => "421".to_string(),
             StatusCodes::RequestedMailActionNotTakenMailboxUnavailable => "450".to_string(),

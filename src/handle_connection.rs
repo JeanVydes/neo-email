@@ -3,7 +3,15 @@ use std::{sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::timeout};
 use tokio_native_tls::TlsAcceptor;
 
-use crate::{client_message::ClientMessage, command::{handle_command, Commands}, connection::{upgrade_to_tls, SMTPConnection, SMTPConnectionStatus}, mail::Mail, message::Message, server::Controllers, status_code::StatusCodes};
+use crate::{
+    client_message::ClientMessage,
+    command::{handle_command, Commands},
+    connection::{upgrade_to_tls, SMTPConnection, SMTPConnectionStatus},
+    mail::Mail,
+    message::Message,
+    server::Controllers,
+    status_code::StatusCodes,
+};
 
 /// # handle_connection_with_timeout
 ///
