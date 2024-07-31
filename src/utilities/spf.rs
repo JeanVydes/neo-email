@@ -12,22 +12,43 @@ use trust_dns_resolver::TokioAsyncResolver;
 /// - Permissive: +all means that all IPs that are not listed in the SPF record are allowed to send emails
 #[derive(Debug, Clone)]
 pub enum SPFRecordAll {
-    Aggresive, // -all means that all IPs that are not listed in the SPF record are not allowed to send emails
-    Passive, // ~all means that all IPs that are not listed in the SPF record are allowed to send emails but marked as spam
-    Permissive, // +all means that all IPs that are not listed in the SPF record are allowed to send emails
+    /// -all means that all IPs that are not listed in the SPF record are not allowed to send emails
+    Aggresive,
+    /// ~all means that all IPs that are not listed in the SPF record are allowed to send emails but marked as spam
+    Passive,
+    /// +all means that all IPs that are not listed in the SPF record are allowed to send emails
+    Permissive,
 }
 
 /// # SPFRecord
 ///
 /// Represents an SPF record
-/// Example `v=spf1 ip4:192.0.2.0 ip4:192.0.2.1 include:examplesender.email -all`
+/// Example of a raw TXT SPF Record `v=spf1 ip4:192.0.2.0 ip4:192.0.2.1 include:examplesender.email -all`
 #[derive(Debug, Clone)]
 pub struct SPFRecord {
+    /// # Version
+    /// 
+    /// Always should be v=spf1
     pub version: String,               // Always should be v=spf1
+    /// # IPv4
+    /// 
+    /// List of allowed IPs
     pub ipv4: Vec<String>,             // List of allowed IPs
+    /// # All
+    /// 
+    /// Policy to apply
     pub all: SPFRecordAll,             // Policy to apply
+    /// # Root Include
+    /// 
+    /// List of to include SPF records (only contain the IP-Domains where the SPF record is located)
     pub root_include: Vec<String>,     // List of to include SPF records
+    /// # Included
+    /// 
+    /// Included SPF records from other domains
     pub included: Box<Vec<SPFRecord>>, // Included SPF records
+    /// # Redirect
+    /// 
+    /// Set the SPF Policy on behalf of another domain
     pub redirect: Option<String>,      // Redirect to another domain
 }
 

@@ -17,38 +17,70 @@ use serde::{Deserialize, Serialize};
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum StatusCodes {
+    /// # Help Message
     HelpMessage = 214,
+    /// # SMTP Service Ready
     SMTPServiceReady = 220,
+    /// # Service Closing Transmission Channel
     ServiceClosingTransmissionChannel = 221,
+    /// # Authentication Successful
     AuthenticationSuccessful = 235,
+    /// # OK
     OK = 250,
+    /// # User Not Local Will Forward
     UserNotLocalWillForward = 251,
+    /// # Cannot Verify User But Will Accept Message And Attempt Delivery
     CannotVerifyUserButWillAcceptMessageAndAttemptDelivery = 252,
 
+    /// # Start Mail Input
     StartMailInput = 354,
 
+    /// # Service Not Available
     ServiceNotAvailable = 421,
+    /// # Requested Mail Action Not Taken: Mailbox Unavailable
     RequestedMailActionNotTakenMailboxUnavailable = 450,
+    /// # Requested Action Aborted: Local Error In Processing
     RequestedActionAbortedLocalErrorInProcessing = 451,
+    /// # Insufficient System Storage
     InsufficientSystemStorage = 452,
+    /// # Server Unable To Accommodate Parameters
     ServerUnableToAccommodateParameters = 455,
 
+    /// # Syntax Error
     SyntaxError = 500,
+    /// # Syntax Error In Parameters Or Arguments
     SyntaxErrorInParametersOrArguments = 501,
+    /// # Command Not Implemented
     CommandNotImplemented = 502,
+    /// # Bad Sequence Of Commands
     BadSequenceOfCommands = 503,
+    /// # Command Parameter Not Implemented
     CommandParameterNotImplemented = 504,
+    /// # Server Does Not Accept Mail
     ServerDoesNotAcceptMail = 521,
+    /// # Authentication Credetials Invalid
     AuthenticationCredetialsInvalid = 535,
+    /// # Recipient Address Rejected
     RecipientAddressRejected = 541,
+    /// # Requested Action Not Taken: Mailbox Unavailable
     RequestedActionNotTakenMailboxUnavailable = 550,
+    /// # User Not Local: Try Forwarding
     UserNotLocalTryForwarding = 551,
+    /// # Exceeded Storage Allocation
     ExceededStorageAllocation = 552,
+    /// # Mailbox Name Not Allowed
     MailboxNameNotAllowed = 553,
+    /// # Transaction Failed
     TransactionFailed = 554,
 }
 
+/// # Status Codes
+/// 
+/// This struct contains methods for the StatusCodes enum.
 impl StatusCodes {
+    /// # To String
+    /// 
+    /// This function converts the status code to a string.
     pub fn to_string(&self) -> String {
         match self {
             StatusCodes::HelpMessage => "214".to_string(),

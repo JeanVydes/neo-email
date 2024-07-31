@@ -99,7 +99,13 @@ impl<T> Mail<T> {
     }
 }
 
+/// # Mail Trait
+/// 
+/// This trait is implemented by Mail and is used to downcast the Mail struct.
 pub trait MailTrait: Send + Sync + 'static {
+    /// # As Any
+    /// 
+    /// This function returns a reference to the dyn Any trait.
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
@@ -118,13 +124,31 @@ impl<T: Clone + Send + Sync + 'static> Clone for Mail<T> {
     }
 }
 
+/// # Email Address
+/// 
+/// This struct represents an email address.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EmailAddress {
+    /// # Username
+    /// 
+    /// The username of the email address.
+    /// 
+    /// ## Example
+    /// 
+    /// `jean`
     pub username: String,
+    /// # Domain
+    /// 
+    /// The domain of the email address.
+    /// 
+    /// ## Example
     pub domain: String,
 }
 
 impl EmailAddress {
+    /// # From String
+    /// 
+    /// This function creates a new EmailAddress from a string.
     pub fn from_string(data: &str) -> Result<Self, SMTPError> {
         let mut parts = data.split('@');
         let username = parts
@@ -147,6 +171,9 @@ impl EmailAddress {
         Ok(EmailAddress { username, domain })
     }
 
+    /// # To String
+    /// 
+    /// This function converts EmailAdress to a String.
     pub fn to_string(&self) -> String {
         format!("{}@{}", self.username, self.domain)
     }

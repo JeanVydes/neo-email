@@ -104,6 +104,9 @@ impl Commands {
         }
     }
 
+    /// # Parse MAIL Command Data
+    /// 
+    /// This function parses the data from the MAIL command.
     pub fn parse_mail_command_data(data: String) -> Result<EmailAddress, SMTPError> {
         // Trim any leading or trailing whitespace
         let data = data.trim();
@@ -122,6 +125,9 @@ impl Commands {
             .map_err(|_| SMTPError::ParseError("Invalid email address".to_string()))
     }
 
+    /// # Parse RCPT Command Data
+    /// 
+    /// This function parses the data from the RCPT command.
     pub fn parse_rcpt_command_data(data: String) -> Result<EmailAddress, SMTPError> {
         // Trim any leading or trailing whitespace
         let data = data.trim();
@@ -141,6 +147,9 @@ impl Commands {
     }
 }
 
+/// # Handle Command
+/// 
+/// This function handles the SMTP command.
 pub async fn handle_command<B>(
     conn: Arc<Mutex<SMTPConnection<B>>>,
     controllers: Controllers<B>,

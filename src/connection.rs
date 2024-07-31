@@ -12,11 +12,26 @@ use trust_dns_resolver::TokioAsyncResolver;
 
 use crate::command::Commands;
 
+/// # Connection Status
+/// 
+/// This represent the status of connection.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SMTPConnectionStatus {
+    /// # Start TLS
+    /// 
+    /// The connection is in the process of upgrading to TLS.
     StartTLS,
+    /// # Waiting Command
+    /// 
+    /// The connection is waiting for a command.
     WaitingCommand,
+    /// # Waiting Data
+    /// 
+    /// The connection is waiting for data (usually after DATA command).
     WaitingData,
+    /// # Closed
+    /// 
+    /// The connection is closed or closing.
     Closed,
 }
 
@@ -25,23 +40,41 @@ pub enum SMTPConnectionStatus {
 /// This struct represents a connection to the SMTP server with the necessary information.
 #[derive(Clone)]
 pub struct SMTPConnection<T> {
-    // Use TLS
+    /// # Use TLS
+    /// 
+    /// This field represents if the connection is using TLS.
     pub use_tls: bool,
-    // TLS Buffer
+    /// # TLS Buffer
+    /// 
+    /// This field represents the TLS Buffer.
     pub tls_buff_socket: Option<Arc<Mutex<BufStream<TlsStream<TcpStream>>>>>,
-    // TCP Buffer
+    /// # TCP Buffer
+    /// 
+    /// This field represents the TCP Buffer.
     pub tcp_buff_socket: Option<Arc<Mutex<BufStream<TcpStream>>>>,
-    // Buffer
+    /// # Buffer
+    /// 
+    /// This field represents the Buffer, usually intended for commands.
     pub buffer: Vec<u8>,
-    // Mail Buffer
+    /// # Mail Buffer
+    /// 
+    /// This field represents the Mail Buffer, usually intended for emails data, actioned by DATA command.
     pub mail_buffer: Vec<u8>,
-    // Connection Status
+    /// # Connection Status
+    /// 
+    /// This field represents the connection status.
     pub status: SMTPConnectionStatus,
-    // DNS Resolver
+    /// # DNS Resolver
+    /// 
+    /// This field represents the DNS Resolver usually used for SPF and DKIM.
     pub dns_resolver: Arc<Mutex<TokioAsyncResolver>>,
-    // Custom state
+    /// # State
+    /// 
+    /// This field represents the custom state of the connection.
     pub state: Arc<Mutex<T>>,
-    // Keep track of the commands that are being received
+    /// # Tracing Commands
+    /// 
+    /// This field represents the traced commands.
     pub tracing_commands: Vec<Commands>,
 }
 
@@ -92,6 +125,9 @@ impl<T> SMTPConnection<T> {
         }
     }
 
+    /// # Get Peer Address
+    /// 
+    /// This function returns the peer address of the connection.
     pub async fn get_peer_addr(&self) -> std::io::Result<SocketAddr> {
         if self.use_tls {
             if let Some(tls_buff_socket) = &self.tls_buff_socket {
@@ -123,6 +159,9 @@ impl<T> SMTPConnection<T> {
         }
     }
 
+    /// # Get TLS Buffer Socket
+    /// 
+    /// This function returns the TLS Buffer Socket.
     pub async fn get_tls_buffer(&self) -> Option<Arc<Mutex<BufStream<TlsStream<TcpStream>>>>> {
         if self.use_tls {
             self.tls_buff_socket.clone()
@@ -131,6 +170,9 @@ impl<T> SMTPConnection<T> {
         }
     }
 
+    /// # Get TCP Buffer Socket
+    /// 
+    /// This function returns the TCP Buffer Socket.
     pub async fn get_tcp_buffer(&self) -> Option<Arc<Mutex<BufStream<TcpStream>>>> {
         if !self.use_tls {
             self.tcp_buff_socket.clone()
@@ -139,6 +181,9 @@ impl<T> SMTPConnection<T> {
         }
     }
 
+    /// # Close Connection
+    /// 
+    /// This function closes the connection.
     pub async fn close(&self) -> std::io::Result<()> {
         if self.use_tls {
             if let Some(tls_buff_socket) = &self.tls_buff_socket {
@@ -155,6 +200,9 @@ impl<T> SMTPConnection<T> {
     }
 }
 
+/// # Upgrade Connection to TLS
+/// 
+/// This function upgrades the connection to TLS.
 pub async fn upgrade_to_tls<B>(
     conn: Arc<Mutex<SMTPConnection<B>>>,
     tls_acceptor: Option<Arc<Mutex<tokio_native_tls::TlsAcceptor>>>,

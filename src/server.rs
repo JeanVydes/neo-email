@@ -105,12 +105,19 @@ pub struct SMTPServer<B> {
 /// This struct is responsible for holding the controllers that will be used by the SMTPServer.
 #[derive(Debug)]
 pub struct Controllers<B> {
+    /// # on_auth controller
     pub on_auth: Option<OnAuthController<B>>,
+    /// # on_email controller
     pub on_email: Option<OnEmailController<B>>,
+    /// # on_reset controller
     pub on_reset: Option<OnResetController<B>>,
+    /// # on_close controller
     pub on_close: Option<OnCloseController<B>>,
+    /// # on_mail_cmd controller
     pub on_mail_cmd: Option<OnMailCommandController<B>>,
+    /// # on_rcpt_cmd controller
     pub on_rcpt_cmd: Option<OnRCPTCommandController<B>>,
+    /// # on_unknown_cmd controller
     pub on_unknown_cmd: Option<OnUnknownCommandController<B>>,
 }
 
@@ -192,11 +199,6 @@ impl<B> SMTPServer<B> {
     /// # set_tls_acceptor
     ///
     /// Set the TLS Acceptor to be used when upgrading the connection to TLS.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// ```
     pub fn set_tls_acceptor(&mut self, acceptor: tokio_native_tls::TlsAcceptor) -> &mut Self {
         log::debug!("[📃] TLS Acceptor set");
         self.use_tls = true;
@@ -245,11 +247,6 @@ impl<B> SMTPServer<B> {
     /// # on_email
     ///
     /// Set the OnEmailController to be used when a email is received.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// ```
     pub fn on_email(&mut self, on_email: OnEmailController<B>) -> &mut Self {
         log::debug!("[📃] Setting OnEmailController");
         self.controllers.on_email = Some(on_email);
@@ -292,6 +289,9 @@ impl<B> SMTPServer<B> {
         self
     }
 
+    /// # on_unknown_cmd
+    /// 
+    /// Set the OnUnknownCommandController to be used when an unknown command is received.
     pub fn on_unknown_cmd(&mut self, on_unknown_cmd: OnUnknownCommandController<B>) -> &mut Self {
         log::debug!("[📃] Setting OnUnknownCommandController");
         self.controllers.on_unknown_cmd = Some(on_unknown_cmd);

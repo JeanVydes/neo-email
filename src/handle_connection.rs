@@ -153,11 +153,23 @@ pub async fn handle_connection<B>(
     let _ = conn.close().await.map_err(|err| log::error!("{}", err));
 }
 
+/// # HandleConnectionFlow
+/// 
+/// This enum represents the possible flows that can occur while handling the connection.
 pub enum HandleConnectionFlow {
+    /// # Continue
+    /// 
+    /// Continue receiving commands/data from the client.
     Continue,
+    /// # Break
+    /// 
+    /// Stop receiving commands/data and close the connection peacefully.
     Break,
 }
 
+/// # handle_connection_logic
+/// 
+/// This function is responsible for handling the connection logic, including the TLS handshake, and the SMTP commands, also dispatching the controllers.
 pub async fn handle_connection_logic<B>(
     use_tls: bool,
     tls_acceptor: Option<Arc<Mutex<TlsAcceptor>>>,

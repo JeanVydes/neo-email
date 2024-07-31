@@ -15,7 +15,17 @@ use super::status_code::StatusCodes;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
+    /// # Status
+    /// 
+    /// The status code of the message.
+    /// 
+    /// ## Example
+    /// 
+    /// `StatusCodes::AuthenticationSuccessful`
     pub status: StatusCodes,
+    /// # Message
+    /// 
+    /// The message to be sent.
     pub message: String,
 }
 
@@ -75,16 +85,25 @@ impl Message {
 }
 
 impl MessageBuilder {
+    /// # Set Status
+    /// 
+    /// This function sets the status of the message.
     pub fn status(mut self, status: StatusCodes) -> Self {
         self.status = Some(status);
         self
     }
 
+    /// # Set Message
+    /// 
+    /// This function sets the message of the message.
     pub fn message(mut self, message: String) -> Self {
         self.message = Some(message);
         self
     }
 
+    /// # Build
+    /// 
+    /// This function builds the message.
     pub fn build(self) -> Message {
         Message {
             status: self.status.unwrap(),
