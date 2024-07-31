@@ -1,8 +1,18 @@
 use super::status_code::StatusCodes;
 
 /// # Message
+/// 
+/// This struct represents a message that the SMTP server can return to the client.
 ///
-/// This struct represents a message to be sent to the client.
+/// ```rust
+/// use neo_email::status_code::StatusCodes;
+/// use neo_email::message::Message;
+/// 
+/// Message::builder()
+///     .status(StatusCodes::AuthenticationSuccessful)
+///     .message("Authenticated".to_string())
+///     .build();
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub status: StatusCodes,
@@ -12,6 +22,16 @@ pub struct Message {
 /// # Message Builder
 ///
 /// This struct is a builder for the Message struct.
+/// 
+/// ```rust
+/// use neo_email::status_code::StatusCodes;
+/// use neo_email::message::Message;
+/// 
+/// Message::builder()
+///     .status(StatusCodes::AuthenticationSuccessful)
+///     .message("Authenticated".to_string())
+///     .build();
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct MessageBuilder {
     status: Option<StatusCodes>,
@@ -19,10 +39,16 @@ pub struct MessageBuilder {
 }
 
 impl Message {
+    /// # New
+    /// 
+    /// This function creates a new message.
     pub fn new(status: StatusCodes, message: String) -> Self {
         Self { status, message }
     }
 
+    /// # Builder
+    /// 
+    /// This function returns a MessageBuilder.
     pub fn builder() -> MessageBuilder {
         MessageBuilder::default()
     }

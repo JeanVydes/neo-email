@@ -21,6 +21,48 @@ use super::controllers::on_reset::OnResetController;
 /// # SMTPServer
 ///
 /// This struct is responsible for holding the SMTPServer configuration and state.
+///
+/// ## Example
+///
+/// ```rust
+/// use neo_email::server::SMTPServer;
+/// use std::net::SocketAddr;
+///
+/// #[derive(Debug, Clone, Default)]
+/// pub struct ConnectionState {
+///     pub authenticated: bool,
+///     pub sender: Option<String>,
+///     pub recipients: Vec<String>,
+/// }
+/// 
+/// #[tokio::main]
+/// async fn main() {
+/// let addr = SocketAddr::from(([127, 0, 0, 1], 2526));
+/// SMTPServer::<ConnectionState>::new()
+///        // Set the number of workers to 1
+///        .workers(1)
+///        // Set the TLS acceptor
+///        // .set_tls_acceptor(tokio_tls_acceptor)
+///        // Set an controller to dispatch when an authentication is received
+///        // .on_auth(OnAuthController::new(on_auth))
+///        // Set an controller to dispatch when an email is received
+///        // .on_email(OnEmailController::new(on_email))
+///        // Set an controller to dispatch when a mail command is received, usually is to indicate the sender of the email
+///        // .on_mail_cmd(OnMailCommandController::new(on_mail_cmd))
+///        // Set an controller to dispatch when a rcpt command is received, usually is to indicate the recipient/s of the email
+///        // .on_rcpt_cmd(OnRCPTCommandController::new(on_rcpt_cmd))
+///        // .on_close(OnCloseController::new(on_close))
+///        // .on_reset(OnResetController::new(on_reset))
+///        // .on_unknown_cmd(OnUnknownCommandController::new(on_unknown_command))
+///        // Bind the server to the address
+///        .bind(addr)
+///        .await
+///        .unwrap()
+///        // Run the server
+///        .run()
+///        .await;
+/// }
+/// ```
 pub struct SMTPServer<B> {
     /// # use_tls
     ///

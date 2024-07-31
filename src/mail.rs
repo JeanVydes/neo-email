@@ -13,6 +13,15 @@ use hashbrown::HashMap;
 ///
 /// * `headers` - A HashMap of EmailHeaders and its values.
 /// * `body` - The body of the email.
+/// 
+/// ## Example
+/// 
+/// ```rust
+/// use neo_email::mail::Mail;
+/// 
+/// let raw_email = b"From: jean@nervio\nSubject: Hello\n\nHello, World!";
+/// let mail = Mail::<Vec<u8>>::from_bytes(raw_email.to_vec()).unwrap();
+/// ```
 #[derive(Debug, PartialEq, Eq)]
 pub struct Mail<T> {
     /// # Headers
@@ -30,6 +39,18 @@ pub struct Mail<T> {
 }
 
 impl<T> Mail<T> {
+    /// # From Bytes
+    /// 
+    /// This function creates a new Mail from bytes.
+    /// 
+    /// ## Example
+    /// 
+    /// ```rust
+    /// use neo_email::mail::Mail;
+    /// 
+    /// let raw_email = b"From: jean@nervio\nSubject: Hello\n\nHello, World!";
+    /// let mail = Mail::<Vec<u8>>::from_bytes(raw_email.to_vec()).unwrap();
+    /// ```
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Mail<T>, String>
     where
         T: From<Vec<u8>>,

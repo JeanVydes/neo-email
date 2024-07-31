@@ -6,6 +6,17 @@ use std::str::{from_utf8, FromStr};
 ///
 /// The headers that a email can contain.
 /// [https://www.iana.org/assignments/message-headers/message-headers.xhtml](https://www.iana.org/assignments/message-headers/message-headers.xhtml)
+/// 
+/// ## Example
+/// 
+/// ```rust
+/// use neo_email::mail::Mail;
+/// use neo_email::headers::EmailHeaders;
+/// 
+/// let raw_email = b"From: jean@nervio\nSubject: Hello\n\nHello, World!";
+/// let mail = Mail::<Vec<u8>>::from_bytes(raw_email.to_vec()).unwrap();
+/// let from = mail.headers.get(&EmailHeaders::From).unwrap();
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum EmailHeaders {
     #[serde(rename = "Accept-Language")]

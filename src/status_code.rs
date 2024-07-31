@@ -2,7 +2,19 @@ use serde::{Deserialize, Serialize};
 
 /// # SMTP Status Codes
 ///
-/// This enum represents the status codes that the SMTP server can return.
+/// This enum represents the status codes that the SMTP server can return to client.
+/// 
+/// ## Example
+/// 
+/// ```rust
+/// use neo_email::status_code::StatusCodes;
+/// use neo_email::message::Message;
+/// 
+/// Message::builder()
+///     .status(StatusCodes::AuthenticationSuccessful)
+///     .message("Authenticated".to_string())
+///     .build()
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum StatusCodes {
     HelpMessage = 214,
