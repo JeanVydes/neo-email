@@ -1,6 +1,6 @@
 [package]
 name = "neo-email"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Jean Vides <jean@nervio.us>"]
 description = "The modern way to build emails services with Rust"
