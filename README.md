@@ -25,17 +25,22 @@ neo-email = { version = "0.1", features = ["experimental"] }
 ## Examples
 
 ```rust
-use std::{net::SocketAddr, sync::Arc};
+// # Example
+// Simple SMTP Example using custom state and some controllers
+// See examples/Full.md for a more complete example using more controllers and setting up a working server
 
-use neo_email::{
-    connection::SMTPConnection,
-    controllers::{on_auth::OnAuthController, on_email::OnEmailController, on_mail::OnMailCommandController},
-    headers::EmailHeaders,
-    mail::Mail,
-    message::Message,
-    server::SMTPServer,
-    status_code::StatusCodes, utilities::spf::{sender_policy_framework, SPFRecordAll},
-};
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use neo_email::connection::SMTPConnection;
+use neo_email::controllers::on_auth::OnAuthController;
+use neo_email::controllers::on_email::OnEmailController;
+use neo_email::headers::EmailHeaders;
+use neo_email::mail::Mail;
+use neo_email::message::Message;
+use neo_email::server::SMTPServer;
+use neo_email::status_code::StatusCodes;
+
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Default)]
@@ -54,8 +59,6 @@ async fn main() {
         .on_auth(OnAuthController::new(on_auth))
         // Set an controller to dispatch when an email is received
         .on_email(OnEmailController::new(on_email))
-        // Set an controller to dispatch when a mail command is received
-        .on_mail_cmd(OnMailCommandController::new(on_mail_cmd))
         // Bind the server to the address
         .bind(addr)
         .await
@@ -66,24 +69,23 @@ async fn main() {
 }
 
 // This function is called when an authentication is received
-// What is data?
-// This send the client: `AUTH PLAIN AHlvdXJfdXNlcm5hbWUAeW91cl9wYXNzd29yZA==`
-// data is `PLAIN AHlvdXJfdXNlcm5hbWUAeW91cl9wYXNzd29yZA==`, just without the command AUTH, which is stripped by the server, you have to handle the command in your controller
 // Ok(Message) for successful authentication
 // Err(Message) for failed authentication and the connection will be closed peacefully
-pub async fn on_auth(
-    conn: Arc<Mutex<SMTPConnection<ConnectionState>>>,
-    _data: String,
-) -> Result<Message, Message> {
+pub async fn on_auth(conn: Arc<Mutex<SMTPConnection<ConnectionState>>>, _data: String) -> Result<Message, Message> {
     let conn = conn.lock().await;
     let mut state = conn.state.lock().await;
+
+    // What is data?
+    // Data is the raw data after command AUTH, example
+    // Original Raw Command: AUTH PLAIN AHlvdXJfdXNlcm5hbWUAeW91cl9wYXNzd29yZA==
+    // Data: PLAIN AHlvdXJfdXNlcm5hbWUAeW91cl9wYXNzd29yZA==
 
     // Using our custom state
     state.authenticated = true;
     // We can also decide to not authenticate the user
 
     Ok(Message::builder()
-        .status(StatusCodes::AuthenticationSuccessful)
+        .status(neo_email::status_code::StatusCodes::AuthenticationSuccessful)
         .message("Authenticated".to_string())
         .build())
 }
@@ -91,16 +93,13 @@ pub async fn on_auth(
 // This function is called when an email is received
 // The mail is a struct that contains the email data, in this case the raw email data in a Vec<u8>
 // Headers are parsed in a hashmap and the body is a Vec<u8>
-pub async fn on_email(
-    conn: Arc<Mutex<SMTPConnection<ConnectionState>>>,
-    mail: Mail<Vec<u8>>,
-) -> Message {
+pub async fn on_email(conn: Arc<Mutex<SMTPConnection<ConnectionState>>>, mail: Mail<Vec<u8>>) -> Message {
     let conn = conn.lock().await;
     let state = conn.state.lock().await;
 
+    // Extract headers
     let headers = mail.headers.clone(); // get the hashmap
-    let subject = headers.get(&EmailHeaders::Subject).unwrap(); // get the Option<Subject> header
-    println!("Subject: {:?}", subject);
+    let _subject = headers.get(&EmailHeaders::Subject).unwrap(); // get the Option<Subject> header
 
     // Check if the user is authenticated from state set in on_auth
     if !state.authenticated {
@@ -110,54 +109,12 @@ pub async fn on_email(
             .build();
     }
 
+    log::info!("Received email: {:?}", mail);
+    
     Message::builder()
         .status(neo_email::status_code::StatusCodes::OK)
         .message("Email received".to_string())
         .build()
-}
-
-// This function is called when a mail command is received, usually is to indicate the sender of the email
-// Here you can apply the SPF check
-pub async fn on_mail_cmd(conn: Arc<Mutex<SMTPConnection<ConnectionState>>>, data: String) -> Result<Message, Message> {
-    // `data` give you the raw data, usually like this `FROM:<email@nervio.us> SIZE:123`
-    let email_domain = "gmail.com"; // example domain
-
-    // Apply the SPF check
-    match sender_policy_framework(
-        conn.clone(),
-        // The domain to check the SPF record, usually the sender email domain
-        email_domain,
-        // Passive allow emails that aren't send on domain behalf, but are spam.
-        SPFRecordAll::Passive,
-        // Max depth of redirects, the SPF record can redirect to another domain, and this domain can redirect to another domain, and so on.
-        3,
-        // Max includes, the SPF record can include another SPF record.
-        3,
-    ).await {
-        // The SPF pass your check and return the SPFRecord (including, the included ones)
-        Ok((pass, _record)) => {
-            if !pass {
-                return Err(Message::builder()
-                    .status(StatusCodes::TransactionFailed)
-                    .message("SPF failed".to_string())
-                    .build());
-            }
-        },
-        // The SPF failed, return an error, can be the DNS (1.1.1.1 by default) or a parsing error
-        Err(e) => {
-            // Decline the transaction and close connection
-            return Err(Message::builder()
-                .status(StatusCodes::TransactionFailed)
-                .message("SPF failed".to_string())
-                .build());
-        }
-    }
-
-    // If the email pass the SPF check, you can continue with your logic, but if it fails, you can return an error with Err(Message) and connection will be closed peacefully
-    Ok(Message::builder()
-        .status(StatusCodes::OK)
-        .message("Mail command received".to_string())
-        .build())
 }
 ```
 

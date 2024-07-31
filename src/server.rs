@@ -9,7 +9,7 @@ use trust_dns_resolver::TokioAsyncResolver;
 
 use crate::client_message::ClientMessage;
 use crate::controllers::on_auth::OnAuthController;
-use crate::controllers::on_mail::OnMailCommandController;
+use crate::controllers::on_mail_cmd::OnMailCommandController;
 use crate::controllers::on_rcpt::OnRCPTCommandController;
 use crate::controllers::on_unknown_command::OnUnknownCommandController;
 use crate::mail::Mail;
@@ -240,7 +240,7 @@ impl<B> SMTPServer<B> {
 
     /// # on_mail_cmd
     ///
-    /// Set the OnMailCommandController to be used when a mail command is received.
+    /// Set the OnMailCommandController to be used when a mail command is received usually indicating the MAIL FROM.
     pub fn on_mail_cmd(&mut self, on_mail_cmd: OnMailCommandController<B>) -> &mut Self {
         log::debug!("[📃] Setting OnMailCommandController");
         self.controllers.on_mail_cmd = Some(on_mail_cmd);
@@ -253,6 +253,12 @@ impl<B> SMTPServer<B> {
     pub fn on_rcpt_cmd(&mut self, on_rcpt_cmd: OnRCPTCommandController<B>) -> &mut Self {
         log::debug!("[📃] Setting OnRCPTCommandController");
         self.controllers.on_rcpt_cmd = Some(on_rcpt_cmd);
+        self
+    }
+
+    pub fn on_unknown_cmd(&mut self, on_unknown_cmd: OnUnknownCommandController<B>) -> &mut Self {
+        log::debug!("[📃] Setting OnUnknownCommandController");
+        self.controllers.on_unknown_cmd = Some(on_unknown_cmd);
         self
     }
 
@@ -997,27 +1003,27 @@ where
             }
         }
         Commands::RCPT => {
-            let last_command = conn.lock().await;
-            let last_command = last_command
-                .tracing_commands
-                .last()
-                .unwrap_or(&Commands::HELO);
-
-            if last_command != &Commands::MAIL && last_command != &Commands::RCPT {
-                (
-                    vec![Message::builder()
-                        .status(StatusCodes::BadSequenceOfCommands)
-                        .message("Bad sequence of commands".to_string())
-                        .build()],
-                    SMTPConnectionStatus::WaitingCommand,
-                )
+            if let Some(on_rcpt_cmd) = &controllers.on_rcpt_cmd {
+                let on_rcpt_cmd = on_rcpt_cmd.0.clone();
+                match on_rcpt_cmd(conn.clone(), client_message.data.clone()).await {
+                    Ok(response) => (vec![response], SMTPConnectionStatus::WaitingCommand),
+                    Err(response) => (vec![response], SMTPConnectionStatus::Closed),
+                }
             } else {
-                if let Some(on_rcpt_cmd) = &controllers.on_rcpt_cmd {
-                    let on_rcpt_cmd = on_rcpt_cmd.0.clone();
-                    match on_rcpt_cmd(conn.clone(), client_message.data.clone()).await {
-                        Ok(response) => (vec![response], SMTPConnectionStatus::WaitingCommand),
-                        Err(response) => (vec![response], SMTPConnectionStatus::Closed),
-                    }
+                let last_command = conn.lock().await;
+                let last_command = last_command
+                    .tracing_commands
+                    .last()
+                    .unwrap_or(&Commands::HELO);
+
+                if last_command != &Commands::MAIL && last_command != &Commands::RCPT {
+                    (
+                        vec![Message::builder()
+                            .status(StatusCodes::BadSequenceOfCommands)
+                            .message("Bad sequence of commands".to_string())
+                            .build()],
+                        SMTPConnectionStatus::WaitingCommand,
+                    )
                 } else {
                     (
                         vec![Message::builder()
@@ -1120,21 +1126,23 @@ where
                 )
             }
         }
-        _ => if let Some(on_unknown_cmd) = &controllers.on_unknown_cmd {
-            let on_unknown_cmd = on_unknown_cmd.0.clone();
-            match on_unknown_cmd(conn.clone(), client_message.command.clone()).await {
-                Ok(response) => (vec![response], SMTPConnectionStatus::WaitingCommand),
-                Err(response) => (vec![response], SMTPConnectionStatus::Closed),
+        _ => {
+            if let Some(on_unknown_cmd) = &controllers.on_unknown_cmd {
+                let on_unknown_cmd = on_unknown_cmd.0.clone();
+                match on_unknown_cmd(conn.clone(), client_message.command.clone()).await {
+                    Ok(response) => (vec![response], SMTPConnectionStatus::WaitingCommand),
+                    Err(response) => (vec![response], SMTPConnectionStatus::Closed),
+                }
+            } else {
+                (
+                    vec![Message::builder()
+                        .status(StatusCodes::CommandNotImplemented)
+                        .message("Command not recognized".to_string())
+                        .build()],
+                    SMTPConnectionStatus::WaitingCommand,
+                )
             }
-        } else {
-            (
-                vec![Message::builder()
-                    .status(StatusCodes::CommandNotImplemented)
-                    .message("Command not recognized".to_string())
-                    .build()],
-                SMTPConnectionStatus::WaitingCommand,
-            )
-        },
+        }
     };
 
     let mut guarded_conn = conn.lock().await;
