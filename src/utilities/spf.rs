@@ -1,7 +1,7 @@
 use crate::{connection::SMTPConnection, errors::SMTPError};
 use std::{net::IpAddr, sync::Arc};
 use tokio::sync::Mutex;
-use trust_dns_resolver::TokioAsyncResolver;
+use trust_dns_resolver::{proto::rr::RecordType, TokioAsyncResolver};
 
 /// # SPFRecordAll
 ///
@@ -27,29 +27,39 @@ pub enum SPFRecordAll {
 #[derive(Debug, Clone)]
 pub struct SPFRecord {
     /// # Version
-    /// 
+    ///
     /// Always should be v=spf1
-    pub version: String,               // Always should be v=spf1
+    pub version: String, // Always should be v=spf1
     /// # IPv4
-    /// 
+    ///
     /// List of allowed IPs
-    pub ipv4: Vec<String>,             // List of allowed IPs
+    pub ipv4: Vec<String>, // List of allowed IPs
+    /// # IPv6
+    ///
+    /// List of allowed IPs
+    ///
+    /// List of allowed IPs
+    pub ipv6: Vec<String>, // List of allowed IPs
     /// # All
-    /// 
+    ///
     /// Policy to apply
-    pub all: SPFRecordAll,             // Policy to apply
+    pub all: SPFRecordAll, // Policy to apply
     /// # Root Include
-    /// 
+    ///
     /// List of to include SPF records (only contain the IP-Domains where the SPF record is located)
-    pub root_include: Vec<String>,     // List of to include SPF records
+    pub root_include: Vec<String>, // List of to include SPF records
     /// # Included
-    /// 
+    ///
     /// Included SPF records from other domains
     pub included: Box<Vec<SPFRecord>>, // Included SPF records
     /// # Redirect
-    /// 
+    ///
     /// Set the SPF Policy on behalf of another domain
-    pub redirect: Option<String>,      // Redirect to another domain
+    pub redirect: Option<String>, // Redirect to another domain
+    /// # Exists
+    /// 
+    /// Check if the SPF record exists
+    pub exists: Option<String>,
 }
 
 /// # SPFRecord
@@ -62,18 +72,22 @@ impl SPFRecord {
     pub fn new(
         version: String,
         ipv4: Vec<String>,
+        ipv6: Vec<String>,
         all: SPFRecordAll,
         root_include: Vec<String>,
         included: Box<Vec<SPFRecord>>,
         redirect: Option<String>,
+        exists: Option<String>,
     ) -> Self {
         SPFRecord {
             version,
             ipv4,
+            ipv6,
             all,
             root_include,
             included,
             redirect,
+            exists,
         }
     }
 
@@ -98,12 +112,15 @@ impl SPFRecord {
 
         // Initialize the lists
         let mut ip4 = Vec::new();
+        let mut ip6 = Vec::new();
         // Initialize the policy
         let mut all = SPFRecordAll::Passive;
         // Initialize the included records
         let mut include = Vec::new();
         // Initialize the redirect
         let mut redirect = None;
+
+        let mut exists = None;
 
         // Iterate over the record
         for i in 1..spf_record.len() {
@@ -117,7 +134,10 @@ impl SPFRecord {
             if record.starts_with("ip4:") {
                 // Add the IP to the list of allowed IPs
                 ip4.push(record.replace("ip4:", ""));
-            // If the record starts with -all, ~all or +all then set the policy
+                // If the record starts with -all, ~all or +all then set the policy
+            } else if record.starts_with("ip6:") {
+                // Add the IP to the list of allowed IPs
+                ip6.push(record.replace("ip6:", ""));
             } else if record.starts_with("-all") {
                 all = SPFRecordAll::Aggresive;
             } else if record.starts_with("~all") {
@@ -130,6 +150,8 @@ impl SPFRecord {
             // If the record starts with redirect= then set the redirect
             } else if record.starts_with("redirect=") {
                 redirect = Some(record.replace("redirect=", ""));
+            } else if record.starts_with("exists:") {
+                exists = Some(record.replace("exists:", ""));
             }
         }
 
@@ -137,10 +159,12 @@ impl SPFRecord {
         Ok(SPFRecord::new(
             version,
             ip4,
+            ip6,
             all,
             include,
             Box::new(vec![]),
             redirect,
+            exists,
         ))
     }
 
@@ -237,13 +261,62 @@ pub async fn sender_policy_framework<B>(
             Err(_) => return Err(SMTPError::SPFError("Failed to get SPF record".to_string())),
         };
 
+    // If exists mechanism is present, check if the record exists
+    match &record.exists {
+        Some(domain_to_query) => {
+            // Append the dot to the domain for a better query
+            let domain_to_query = format!("{}.", domain_to_query);
+            // Lock the DNS resolver
+            let dns_resolver_guarded = conn.dns_resolver.lock().await;
+            // Check if the domain has a valid record
+            let mut record_exists = false;
+
+            // Check if the domain has an A or AAAA record
+            // If the domain has an A or AAAA record, then the domain exists
+            if origin_ip.is_ipv4() {
+                // Get the A record
+                let lookup = dns_resolver_guarded
+                    .lookup(domain_to_query.as_str(), RecordType::A)
+                    .await
+                    .map_err(|_| SMTPError::DNSError("Failed to get A record".to_string()))?;
+                // Check if the domain has an A record
+                let a_record_exists = lookup.records().iter().find(|record| {
+                    record.record_type() == RecordType::A
+                });
+                // If the domain has an A record, then the domain exists
+                if a_record_exists.is_some() {
+                    record_exists = true;
+                }
+            } else {
+                // Get the AAAA record
+                let lookup = dns_resolver_guarded
+                    .lookup(domain_to_query.as_str(), RecordType::AAAA)
+                    .await
+                    .map_err(|_| SMTPError::DNSError("Failed to get AAAA record".to_string()))?;
+                // Check if the domain has an AAAA record
+                let aaaa_record_exists = lookup.records().iter().find(|record| {
+                    record.record_type() == RecordType::AAAA
+                });
+                // If the domain has an AAAA record, then the domain exists
+                if aaaa_record_exists.is_some() {
+                    record_exists = true;
+                }
+            }
+            // If the domain does not exist, then return an error
+            if !record_exists {
+                return Err(SMTPError::SPFError("IP not allowed".to_string()));
+            }
+        }
+        None => {}
+    }
+
     // Check if record require including other SPF records, and include it
     // For now this included_records cant include other, but allow redirects
     if record.root_include.len() > 0 {
         // Include only `max_include` records
         let mut i = max_include;
         // Include the SPF records
-        for include in record.clone().root_include {
+        for include in &record.root_include {
             // If the max_include is 0, then break the loop
             if i == 0 {
                 break;
@@ -272,66 +345,137 @@ pub async fn sender_policy_framework<B>(
 
     // Extend the ipv4 list with the included records
     let mut total_ipv4 = record.ipv4.clone();
+    let mut total_ipv6 = record.ipv6.clone();
     for included_record in record.included.iter() {
         // Extend the ipv4 list with the included records
         total_ipv4.extend(included_record.ipv4.clone());
+        // Extend the ipv6 list with the included records
+        total_ipv6.extend(included_record.ipv6.clone());
     }
 
     // Check if the IP is in the list of allowed IPs
     let mut matched_allowed_ip_pattern: Option<String> = None;
-    for ipv4 in total_ipv4.iter() {
-        // Split the IP/CIDR
-        let parts = ipv4.split("/").collect::<Vec<&str>>();
 
-        // Check if the IP is valid
-        if parts.len() != 2 {
-            continue;
-        }
+    if origin_ip.is_ipv4() {
+        for ipv4 in total_ipv4.iter() {
+            // Split the IP/CIDR
+            let parts = ipv4.split("/").collect::<Vec<&str>>();
 
-        let allowed_ip = parts[0];
-        let cdir = parts[1];
+            // Check if the IP is valid
+            let (allowed_ip, cdir) = if parts.len() == 2 {
+                (parts[0], parts[1])
+            } else if parts.len() == 1 {
+                (parts[0], "32") // Default prefix length for single IP addresses
+            } else {
+                // Invalid format, skip this record
+                continue;
+            };
 
-        // Convert the IP to a number
-        let ip_num = allowed_ip
-            .split('.')
-            .map(|s| s.parse::<u32>().unwrap())
-            .fold(0, |acc, part| (acc << 8) + part);
-
-        // Create the mask
-        let cdir_num = match cdir.parse::<u32>() {
-            Ok(num) => num,
-            Err(_) => continue,
-        };
-
-        // Create the mask
-        let mask = (0xffffffff as u32) << (32 - cdir_num);
-
-        // Apply the mask
-        let ip_num = ip_num & mask;
-        // Get the IP from the peer IP
-        let origin_ip = origin_ip.ip();
-
-        // Example
-        // allowed ip: 130.211.0.0/22 from an allowed Gmail google server
-        // Range 130.211.0.0 -> 130.211.2.255
-        // origin ip: 130.211.0.155 that is in range of allowed IPs
-        // so supossing that email is sent from
-        // let origin_ip = IpAddr::V4(std::net::Ipv4Addr::new(130, 211, 0, 155));`
-
-        // Extract the IP number from the peer IP
-        if let IpAddr::V4(ipv4_addr) = origin_ip {
             // Convert the IP to a number
-            let peer_ip_num = u32::from(ipv4_addr);
+            let ip_num = allowed_ip
+                .split('.')
+                .map(|s| s.parse::<u32>().unwrap())
+                .fold(0, |acc, part| (acc << 8) + part);
 
-            // Check if the IP is in the range
-            if ip_num == (peer_ip_num & mask) {
-                matched_allowed_ip_pattern = Some(ipv4.to_string());
-                break;
+            // Create the mask
+            let cdir_num = match cdir.parse::<u32>() {
+                Ok(num) => num,
+                Err(_) => continue,
+            };
+
+            // Create the mask
+            let mask = (0xffffffff as u32) << (32 - cdir_num);
+
+            // Apply the mask
+            let ip_num = ip_num & mask;
+            // Get the IP from the peer IP
+            let origin_ip = origin_ip.ip();
+
+            // Example
+            // allowed ip: 130.211.0.0/22 from an allowed Gmail google server
+            // Range 130.211.0.0 -> 130.211.2.255
+            // origin ip: 130.211.0.155 that is in range of allowed IPs
+            // so supossing that email is sent from
+            // let origin_ip = IpAddr::V4(std::net::Ipv4Addr::new(130, 211, 0, 155));`
+
+            // Extract the IP number from the peer IP
+            if let IpAddr::V4(ipv4_addr) = origin_ip {
+                // Convert the IP to a number
+                let peer_ip_num = u32::from(ipv4_addr);
+
+                // Check if the IP is in the range
+                if ip_num == (peer_ip_num & mask) {
+                    matched_allowed_ip_pattern = Some(ipv4.to_string());
+                    break;
+                }
+            }
+        }
+    } else {
+        for ipv6 in total_ipv6.iter() {
+            // Split the IP/CIDR
+            let parts = ipv6.split("/").collect::<Vec<&str>>();
+
+            // Check if the IP is valid
+            let (allowed_ip, cdir) = if parts.len() == 2 {
+                (parts[0], parts[1])
+            } else if parts.len() == 1 {
+                (parts[0], "128") // Default prefix length for single IP addresses
+            } else {
+                // Invalid format, skip this record
+                continue;
+            };
+
+            // Parse the CIDR value
+            let cidr_num: u8 = match cdir.parse() {
+                Ok(num) => num,
+                Err(_) => continue,
+            };
+
+            // Parse the allowed IP into segments
+            let allowed_ip_segments: Vec<u16> = allowed_ip
+                .split(':')
+                .map(|s| u16::from_str_radix(s, 16).unwrap_or(0))
+                .collect();
+
+            // Compute the mask for the given CIDR
+            let mask: Vec<u16> = (0..8)
+                .map(|i| {
+                    if i < (cidr_num / 16) {
+                        0xffff
+                    } else if i == (cidr_num / 16) {
+                        0xffff << (16 - (cidr_num % 16))
+                    } else {
+                        0
+                    }
+                })
+                .collect();
+
+            // Apply the mask to the allowed IP segments
+            let masked_allowed_ip: Vec<u16> = allowed_ip_segments
+                .iter()
+                .zip(&mask)
+                .map(|(segment, m)| segment & m)
+                .collect();
+
+            // Apply the mask to the sender's IP segments
+            if let IpAddr::V6(ipv6_addr) = origin_ip.ip() {
+                let peer_ip_segments: Vec<u16> = ipv6_addr.segments().to_vec();
+                let masked_peer_ip: Vec<u16> = peer_ip_segments
+                    .iter()
+                    .zip(&mask)
+                    .map(|(segment, m)| segment & m)
+                    .collect();
+
+                // Check if the masked allowed IP and the masked peer IP match
+                if masked_allowed_ip == masked_peer_ip {
+                    matched_allowed_ip_pattern = Some(ipv6.to_string());
+                    break;
+                }
             }
         }
     }
 
-    // Check the policy based on the result 323 571 9840
+    // Check the policy based on the result
     match (policy, matched_allowed_ip_pattern.as_ref()) {
         // If the policy is Aggresive and the IP is on the list then return true
         (SPFRecordAll::Aggresive, Some(_)) => Ok((true, record, matched_allowed_ip_pattern)),
