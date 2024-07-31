@@ -9,3 +9,4 @@ pub mod errors;
 pub mod controllers;
 pub mod client_message;
 pub mod utilities;
+pub mod handle_connection;

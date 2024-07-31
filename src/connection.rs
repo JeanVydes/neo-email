@@ -1,7 +1,9 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use tokio::time::timeout;
 use tokio::{io::BufStream, net::TcpStream, sync::Mutex};
 use tokio_native_tls::TlsStream;
 use tokio::io::AsyncWriteExt;
@@ -142,4 +144,58 @@ impl<T> SMTPConnection<T> {
         }
         Ok(())
     }
+}
+
+pub async fn upgrade_to_tls<B>(
+    conn: Arc<Mutex<SMTPConnection<B>>>,
+    tls_acceptor: Option<Arc<Mutex<tokio_native_tls::TlsAcceptor>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    log::trace!("[🌐🔒] Upgrading connection to TLS");
+
+    let tls_acceptor = match tls_acceptor {
+        Some(tls_acceptor) => tls_acceptor,
+        None => return Err("TLS Acceptor not set".into()),
+    };
+
+    log::trace!("[🌐🔒] Locking connection to upgrade to TLS");
+    let mut conn_locked = conn.lock().await;
+    log::trace!("[🌐🔒] Connection locked");
+
+    // Take out the TcpStream from the connection and set tcp_buff_socket to None
+    let tcp_buff_socket = conn_locked
+        .tcp_buff_socket
+        .take()
+        .ok_or("No TcpStream found")?;
+    let tcp_buff_socket = Arc::try_unwrap(tcp_buff_socket).map_err(|_| "Failed to unwrap Arc")?;
+    let tcp_buff_socket = tcp_buff_socket.into_inner();
+    let tcp_stream = tcp_buff_socket.into_inner();
+
+    // Acquire the TlsAcceptor and accept the TcpStream to create a TlsStream
+    log::trace!("[🌐🔒] Locking TLS Acceptor");
+    let tls_acceptor = tls_acceptor.lock().await.clone();
+    log::trace!("[🌐🔒] TLS Acceptor locked");
+
+    log::trace!("[🌐🔒🟢] Accepting TLS connection");
+
+    let tls_stream = match timeout(Duration::from_secs(10), tls_acceptor.accept(tcp_stream)).await {
+        Ok(Ok(tls_stream)) => {
+            log::trace!("[🌐🔒🟢] TLS connection Accepted");
+            tls_stream
+        }
+        Ok(Err(err)) => {
+            log::error!("[🌐🔒🚫] Error during TLS handshake: {}", err);
+            return Err(err.into());
+        }
+        Err(_) => {
+            log::error!("[🌐🔒🚫] TLS handshake timed out");
+            return Err("TLS handshake timed out".into());
+        }
+    };
+
+    // Set the tls_buff_socket to the new TlsStream wrapped in BufStream
+    conn_locked.tls_buff_socket = Some(Arc::new(Mutex::new(BufStream::new(tls_stream))));
+    conn_locked.use_tls = true;
+    conn_locked.status = SMTPConnectionStatus::WaitingCommand;
+
+    Ok(())
 }
