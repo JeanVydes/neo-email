@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
 
-use super::{command::Commands, errors::SMTPError};
+use super::{command::Commands, errors::Error};
 
 /// # Client Message
 ///
@@ -32,7 +32,7 @@ impl<T> ClientMessage<T> {
     /// # From Bytes
     ///
     /// This function converts a byte array to a ClientMessage struct.
-    pub fn from_bytes<'a>(bytes: Vec<u8>) -> Result<ClientMessage<T>, SMTPError>
+    pub fn from_bytes<'a>(bytes: Vec<u8>) -> Result<ClientMessage<T>, Error>
     where
         // The data must be able to be converted from a Vec<u8>
         T: std::convert::From<std::string::String> + Debug,
@@ -42,7 +42,7 @@ impl<T> ClientMessage<T> {
             Ok(cmd) => cmd,
             // If it fails, return an error
             Err(_) => {
-                return Err(SMTPError::ParseError(
+                return Err(Error::ParseError(
                     "Cannot convert to String from bytes".to_owned(),
                 ))
             }
@@ -56,7 +56,7 @@ impl<T> ClientMessage<T> {
             Some(cmd) => cmd.to_string(),
             None => {
                 // If there is no command, return an error
-                return Err(SMTPError::ParseError(
+                return Err(Error::ParseError(
                     "Invalid Message, Message doesn't contain COMMAND".to_owned(),
                 ));
             }

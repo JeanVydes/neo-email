@@ -6,7 +6,7 @@ use super::command::Commands;
 ///
 /// This enum represents the possible errors that can occur in the SMTP server.
 #[derive(Debug)]
-pub enum SMTPError {
+pub enum Error {
     /// # IO Error
     /// 
     /// This error occurs when there is an IO error.
@@ -41,21 +41,21 @@ pub enum SMTPError {
     CustomError(String),
 }
 
-/// # Display implementation for SMTPError
-impl fmt::Display for SMTPError {
+/// # Display implementation for Error
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SMTPError::IoError(err) => write!(f, "IO Error: {}", err),
-            SMTPError::ParseError(err) => write!(f, "Parse Error: {}", err),
-            SMTPError::DKIMError(err) => write!(f, "DKIM Error: {}", err),
-            SMTPError::SPFError(err) => write!(f, "SPF Error: {}", err),
-            SMTPError::DMARCError(err) => write!(f, "DMARC Error: {}", err),
-            SMTPError::DNSError(err) => write!(f, "DNS Error: {}", err),
-            SMTPError::UnknownCommand(cmd) => write!(f, "Unknown Command: {:?}", cmd),
-            SMTPError::CustomError(msg) => write!(f, "Custom Error: {}", msg),
+            Error::IoError(err) => write!(f, "IO Error: {}", err),
+            Error::ParseError(err) => write!(f, "Parse Error: {}", err),
+            Error::DKIMError(err) => write!(f, "DKIM Error: {}", err),
+            Error::SPFError(err) => write!(f, "SPF Error: {}", err),
+            Error::DMARCError(err) => write!(f, "DMARC Error: {}", err),
+            Error::DNSError(err) => write!(f, "DNS Error: {}", err),
+            Error::UnknownCommand(cmd) => write!(f, "Unknown Command: {:?}", cmd),
+            Error::CustomError(msg) => write!(f, "Custom Error: {}", msg),
         }
     }
 }
 
-/// # Standard Error implementation for SMTPError
-impl std::error::Error for SMTPError {}
+/// # Standard Error implementation for Error
+impl std::error::Error for Error {}

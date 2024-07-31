@@ -13,7 +13,7 @@ use std::str::{from_utf8, FromStr};
 /// use neo_email::mail::Mail;
 /// use neo_email::headers::EmailHeaders;
 /// 
-/// let raw_email = b"From: jean@nervio\nSubject: Hello\n\nHello, World!";
+/// let raw_email = b"From: Jean<jean@nervio.com>\nSubject: Hello\n\nHello, World!";
 /// let mail = Mail::<Vec<u8>>::from_bytes(raw_email.to_vec()).unwrap();
 /// let from = mail.headers.get(&EmailHeaders::From).unwrap();
 /// ```
@@ -928,7 +928,6 @@ impl FromStr for EmailHeaders {
     }
 }
 
-// Implement fmt::Display trait to convert EmailHeaders enum to string
 impl fmt::Display for EmailHeaders {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Use serde_json to serialize the EmailHeaders enum to a string

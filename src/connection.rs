@@ -181,6 +181,15 @@ impl<T> SMTPConnection<T> {
         }
     }
 
+    /// # Reset
+    /// 
+    /// This function resets the connection.
+    pub async fn reset(&mut self) {
+        self.buffer.clear();
+        self.mail_buffer.clear();
+        self.status = SMTPConnectionStatus::WaitingCommand;
+    }
+
     /// # Close Connection
     /// 
     /// This function closes the connection.

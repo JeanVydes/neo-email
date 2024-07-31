@@ -7,7 +7,7 @@
 /// Note: This module is not implemented yet.
 
 /*
-use crate::{connection::SMTPConnection, errors::SMTPError};
+use crate::{connection::SMTPConnection, errors::Error};
 use base64::prelude::*;
 use openssl::{pkey::PKey, rsa::Rsa, sign::Verifier};
 use sha1::Digest;
@@ -56,19 +56,19 @@ impl DKIMRecord {
     /// # from_string
     ///
     /// Parse a DNS DKIM record to a DKIMRecord struct
-    pub fn from_string(record: &str) -> Result<Self, SMTPError> {
+    pub fn from_string(record: &str) -> Result<Self, Error> {
         // Split the record by spaces
         let record = record.split(";").collect::<Vec<&str>>();
         // Remove trailing spaces
         let record = record.iter().map(|s| s.trim()).collect::<Vec<&str>>();
         // Check if the record has at least 2 elements
         if record.len() < 2 {
-            return Err(SMTPError::DKIMError("Invalid DKIM record".to_string()));
+            return Err(Error::DKIMError("Invalid DKIM record".to_string()));
         }
 
         // Check if the version is v=dkim1
         if record[0] != "v=dkim1" && record[0] != "v=DKIM1" {
-            return Err(SMTPError::DKIMError("Invalid DKIM version".to_string()));
+            return Err(Error::DKIMError("Invalid DKIM version".to_string()));
         }
 
         let mut version = String::new();
@@ -96,14 +96,14 @@ impl DKIMRecord {
     pub async fn get_dns_dkim_record(
         dns_resolver: Arc<Mutex<TokioAsyncResolver>>,
         dkim_header: DKIMHeader,
-    ) -> Result<Self, SMTPError> {
+    ) -> Result<Self, Error> {
         // Lock the DNS resolver
         let dns_resolver_guarded = dns_resolver.lock().await;
         // Get the DKIM record from the DNS
         let txt_records = dns_resolver_guarded
             .txt_lookup(format!("{}.", dkim_header.domain).as_str())
             .await
-            .map_err(|_| SMTPError::DNSError("Failed to get DKIM record".to_string()))?;
+            .map_err(|_| Error::DNSError("Failed to get DKIM record".to_string()))?;
 
         // Find the DKIM record for DKIM policy
         let dkim_record = txt_records.iter().find(|record| {
@@ -113,7 +113,7 @@ impl DKIMRecord {
         // Check if the DKIM record was found
         /*let dkim_record = match dkim_record {
             Some(record) => record.to_string(),
-            None => return Err(SMTPError::SPFError("DKIM record not found".to_string())),
+            None => return Err(Error::SPFError("DKIM record not found".to_string())),
         };*/
 
         // test dkim record
@@ -137,7 +137,7 @@ pub async fn dkim<B>(
     conn: Arc<Mutex<SMTPConnection<B>>>,
     dkim_header: String,
     body: Vec<u8>,
-) -> Result<DKIMRecord, SMTPError> {
+) -> Result<DKIMRecord, Error> {
     let conn = conn.lock().await;
     let dkim_header = DKIMHeader::from_string(dkim_header.as_str())?;
     // Get the DKIM record from the DNS
@@ -145,20 +145,20 @@ pub async fn dkim<B>(
         DKIMRecord::get_dns_dkim_record(conn.dns_resolver.clone(), dkim_header.clone()).await?;
     let pem_key = format_public_key(record.public_key.as_str());
     let rsa = Rsa::public_key_from_pem(pem_key.as_bytes())
-        .map_err(|err| SMTPError::DKIMError(err.to_string()))?;
-    let pkey = PKey::from_rsa(rsa).map_err(|err| SMTPError::DKIMError(err.to_string()))?;
+        .map_err(|err| Error::DKIMError(err.to_string()))?;
+    let pkey = PKey::from_rsa(rsa).map_err(|err| Error::DKIMError(err.to_string()))?;
 
     let alg = match dkim_header.algorithm.as_str() {
         "rsa-sha1" => openssl::hash::MessageDigest::sha1(),
         "rsa-sha256" => openssl::hash::MessageDigest::sha256(),
-        _ => return Err(SMTPError::DKIMError("Invalid DKIM algorithm".to_string())),
+        _ => return Err(Error::DKIMError("Invalid DKIM algorithm".to_string())),
     };
 
     let mut verifier =
-        Verifier::new(alg, &pkey).map_err(|e| SMTPError::DKIMError(e.to_string()))?;
+        Verifier::new(alg, &pkey).map_err(|e| Error::DKIMError(e.to_string()))?;
     verifier
         .set_rsa_padding(openssl::rsa::Padding::PKCS1)
-        .map_err(|e| SMTPError::DKIMError(e.to_string()))?;
+        .map_err(|e| Error::DKIMError(e.to_string()))?;
 
     let clean_signature = dkim_header
         .signature
@@ -169,13 +169,13 @@ pub async fn dkim<B>(
     // Decode the Base64 encoded signature
     let mut signature_bytes = match BASE64_STANDARD.decode(clean_signature.as_bytes()) {
         Ok(signature_bytes) => signature_bytes,
-        Err(e) => return Err(SMTPError::DKIMError(e.to_string())),
+        Err(e) => return Err(Error::DKIMError(e.to_string())),
     };
 
     // Verify the signature
     verifier
         .verify(&signature_bytes)
-        .map_err(|e| SMTPError::DKIMError(e.to_string()))?;
+        .map_err(|e| Error::DKIMError(e.to_string()))?;
 
     Ok(record)
 }
@@ -205,7 +205,7 @@ pub struct DKIMHeader {
 }
 
 impl DKIMHeader {
-    pub fn from_string(header: &str) -> Result<Self, SMTPError> {
+    pub fn from_string(header: &str) -> Result<Self, Error> {
         // Split the record by spaces
         let header = header.split(";").collect::<Vec<&str>>();
         // Remove trailing spaces

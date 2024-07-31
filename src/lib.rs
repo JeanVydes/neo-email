@@ -14,7 +14,6 @@
 //! ```rust,no_run
 //! use std::net::SocketAddr;
 //! use std::sync::Arc;
-
 //! use neo_email::connection::SMTPConnection;
 //! use neo_email::controllers::on_auth::OnAuthController;
 //! use neo_email::controllers::on_email::OnEmailController;
@@ -138,14 +137,89 @@ pub mod errors;
 /// # Handle Connection
 pub mod handle_connection;
 /// # Headers
+/// 
+/// This module contains the headers for the email, this headers are used to parse the email headers.
+/// 
+/// ## Example
+/// 
+/// ```rust,no_run
+/// use neo_email::mail::Mail;
+/// use neo_email::headers::EmailHeaders;
+/// 
+/// let raw_email = b"From: Jean <jean@nervio.com>\nSubject: Hello\n\nHello, World!";
+/// let mail = Mail::<Vec<u8>>::from_bytes(raw_email.to_vec()).unwrap();
+/// let subject = mail.headers.get(&EmailHeaders::Subject).unwrap();
 pub mod headers;
 /// # Mail
+/// 
+/// This module contains the mail object, that is divided in two parts, Headers that is a HashMap of provided EmailHeaders->RawHeader and the body that is a T, and commonly used as Vec<u8>.
+/// 
+/// ## Example
+/// 
+/// ```rust,no_run
+/// use neo_email::mail::Mail;
+/// 
+/// let raw_email = b"From: Jean <jean@nervio.com>\nSubject: Hello\n\nHello, World!";
+/// let mail = Mail::<Vec<u8>>::from_bytes(raw_email.to_vec()).unwrap();
 pub mod mail;
 /// # Message
+/// 
+/// This module contains the message struct, this struct is used to send messages to the client.
+/// 
+/// ## Example
+/// 
+/// ```rust,no_run
+/// use neo_email::message::Message;
+/// use neo_email::status_code::StatusCodes;
+/// 
+/// let message = Message::builder()
+///     .status(StatusCodes::OK)
+///     .message("OK".to_string())
+///     .build();
 pub mod message;
 /// # Server
+/// 
+/// This module contains the SMTP server, from this you can create a fully customizable SMTP server with Commands, Controllers, States and more.
+/// 
+/// ## Example
+/// 
+/// ```rust,no_run
+/// use std::net::SocketAddr;
+/// use neo_email::server::SMTPServer;
+/// 
+/// #[tokio::main]
+/// async fn main() {
+///     let addr = SocketAddr::from(([127, 0, 0, 1], 2526));
+///     // Create the server
+///     SMTPServer::new()
+///         // Set the number of workers to 1
+///         .workers(1)
+///         // Bind the server to the address
+///         .bind(addr)
+///         .await
+///         .unwrap()
+///         // Run the server
+///         .run()
+///         .await;
+/// }
 pub mod server;
 /// # Status Code
+/// 
+/// This module contains the status codes for the SMTP server.
+/// 
+/// ## Example
+/// 
+/// ```rust,no_run
+/// use neo_email::status_code::StatusCodes;
+/// use neo_email::message::Message;
+/// 
+/// let message = Message::builder()
+///     .status(StatusCodes::OK)
+///     .message("OK".to_string())
+///     .build();
+/// ```
 pub mod status_code;
 /// # Utilities
+/// 
+/// This module contains utilities for the SMTP server for example SPF, DKIM and DMARC
 pub mod utilities;

@@ -1,4 +1,4 @@
-use crate::{connection::SMTPConnection, errors::SMTPError};
+use crate::{connection::SMTPConnection, errors::Error};
 use std::{net::IpAddr, sync::Arc};
 use tokio::sync::Mutex;
 use trust_dns_resolver::{proto::rr::RecordType, TokioAsyncResolver};
@@ -94,35 +94,30 @@ impl SPFRecord {
     /// # from_string
     ///
     /// Parse a DNS SPF record to a SPFRecord struct
-    pub fn from_string(spf_record: &str) -> Result<Self, SMTPError> {
+    pub fn from_string(spf_record: &str) -> Result<Self, Error> {
         // Remove trailing spaces
         let spf_record = spf_record.trim();
         // Split the record by spaces
         let spf_record = spf_record.split_whitespace().collect::<Vec<&str>>();
         // Check if the record is valid (have enough information)
         if spf_record.len() < 2 {
-            return Err(SMTPError::SPFError("Invalid SPF record".to_string()));
+            return Err(Error::SPFError("Invalid SPF record".to_string()));
         }
 
         // Extract the version (should be v=spf1)
         let version = spf_record[0].to_string().split("=").collect::<Vec<&str>>()[1].to_string();
         if version != "spf1" {
-            return Err(SMTPError::SPFError("Invalid SPF version".to_string()));
+            return Err(Error::SPFError("Invalid SPF version".to_string()));
         }
 
-        // Initialize the lists
         let mut ip4 = Vec::new();
         let mut ip6 = Vec::new();
-        // Initialize the policy
         let mut all = SPFRecordAll::Passive;
-        // Initialize the included records
         let mut include = Vec::new();
-        // Initialize the redirect
         let mut redirect = None;
-
         let mut exists = None;
 
-        // Iterate over the record
+        // Iterate over the record to find parts
         for i in 1..spf_record.len() {
             // Get the record part
             let record = spf_record[i];
@@ -130,13 +125,9 @@ impl SPFRecord {
             let record = record.to_lowercase();
 
             // Check the record
-            // If the record starts with ip4: then add it to the ip4 list
             if record.starts_with("ip4:") {
-                // Add the IP to the list of allowed IPs
                 ip4.push(record.replace("ip4:", ""));
-                // If the record starts with -all, ~all or +all then set the policy
             } else if record.starts_with("ip6:") {
-                // Add the IP to the list of allowed IPs
                 ip6.push(record.replace("ip6:", ""));
             } else if record.starts_with("-all") {
                 all = SPFRecordAll::Aggresive;
@@ -144,10 +135,8 @@ impl SPFRecord {
                 all = SPFRecordAll::Passive;
             } else if record.starts_with("+all") {
                 all = SPFRecordAll::Permissive;
-            // If the record starts with include: then add it to the include list
             } else if record.starts_with("include:") {
                 include.push(record.replace("include:", ""));
-            // If the record starts with redirect= then set the redirect
             } else if record.starts_with("redirect=") {
                 redirect = Some(record.replace("redirect=", ""));
             } else if record.starts_with("exists:") {
@@ -178,10 +167,10 @@ impl SPFRecord {
         remaining_redirects: u8,
         dns_resolver: Arc<Mutex<TokioAsyncResolver>>,
         domain: &str,
-    ) -> Result<Self, SMTPError> {
+    ) -> Result<Self, Error> {
         // Check if the number of remaining redirects is 0, and return an error
         if remaining_redirects == 0 {
-            return Err(SMTPError::DNSError("Max redirects reached".to_string()));
+            return Err(Error::DNSError("Max redirects reached".to_string()));
         }
 
         // Lock the DNS resolver
@@ -190,7 +179,7 @@ impl SPFRecord {
         let spf_record = dns_resolver_guarded
             .txt_lookup(format!("{}.", domain).as_str())
             .await
-            .map_err(|_| SMTPError::DNSError("Failed to get SPF record".to_string()))?;
+            .map_err(|_| Error::DNSError("Failed to get SPF record".to_string()))?;
 
         // Find the SPF record for SPF policy
         let spf_record = spf_record
@@ -200,7 +189,7 @@ impl SPFRecord {
         // Check if the SPF record was found
         let spf_record = match spf_record {
             Some(record) => record.to_string(),
-            None => return Err(SMTPError::SPFError("SPF record not found".to_string())),
+            None => return Err(Error::SPFError("SPF record not found".to_string())),
         };
 
         // Parse the SPF record
@@ -244,22 +233,22 @@ pub async fn sender_policy_framework<B>(
     policy: SPFRecordAll,
     max_depth_redirect: u8,
     max_include: u8,
-) -> Result<(bool, SPFRecord, Option<String>), SMTPError> {
+) -> Result<(bool, SPFRecord, Option<String>), Error> {
     // Lock the connection
     let conn = conn.lock().await;
     // Get the IP address of the sender
     let origin_ip = match conn.get_peer_addr().await {
         Ok(ip) => ip,
-        Err(_) => return Err(SMTPError::SPFError("Failed to get IP address".to_string())),
+        Err(_) => return Err(Error::SPFError("Failed to get IP address".to_string())),
     };
 
-    // Get the SPF record from the DNS with a max depth of 3
+    // Get the SPF record from the DNS with a max depth of `max_depth_redirect` and a max number of included records of `max_include`
     let mut record =
         match SPFRecord::get_dns_spf_record(max_depth_redirect, conn.dns_resolver.clone(), domain)
             .await
         {
             Ok(record) => record,
-            Err(_) => return Err(SMTPError::SPFError("Failed to get SPF record".to_string())),
+            Err(_) => return Err(Error::SPFError("Failed to get SPF record".to_string())),
         };
 
     // If exists mechanism is present, check if the record exists
@@ -279,7 +268,7 @@ pub async fn sender_policy_framework<B>(
                 let lookup = dns_resolver_guarded
                     .lookup(domain_to_query.as_str(), RecordType::A)
                     .await
-                    .map_err(|_| SMTPError::DNSError("Failed to get A record".to_string()))?;
+                    .map_err(|_| Error::DNSError("Failed to get A record".to_string()))?;
                 // Check if the domain has an A record
                 let a_record_exists = lookup.records().iter().find(|record| {
                     record.record_type() == RecordType::A
@@ -293,7 +282,7 @@ pub async fn sender_policy_framework<B>(
                 let lookup = dns_resolver_guarded
                     .lookup(domain_to_query.as_str(), RecordType::AAAA)
                     .await
-                    .map_err(|_| SMTPError::DNSError("Failed to get AAAA record".to_string()))?;
+                    .map_err(|_| Error::DNSError("Failed to get AAAA record".to_string()))?;
                 // Check if the domain has an AAAA record
                 let aaaa_record_exists = lookup.records().iter().find(|record| {
                     record.record_type() == RecordType::AAAA
@@ -305,7 +294,7 @@ pub async fn sender_policy_framework<B>(
             }
             // If the domain does not exist, then return an error
             if !record_exists {
-                return Err(SMTPError::SPFError("IP not allowed".to_string()));
+                return Err(Error::SPFError("IP not allowed".to_string()));
             }
         }
         None => {}
@@ -332,7 +321,7 @@ pub async fn sender_policy_framework<B>(
             {
                 Ok(record) => record,
                 Err(_) => {
-                    return Err(SMTPError::SPFError(
+                    return Err(Error::SPFError(
                         "Failed to get included SPF record".to_string(),
                     ))
                 }
@@ -362,7 +351,7 @@ pub async fn sender_policy_framework<B>(
             // Split the IP/CIDR
             let parts = ipv4.split("/").collect::<Vec<&str>>();
 
-            // Check if the IP is valid
+            // Get the allowed_ip and cdir part, isn't a cdir part then 32 is default (that is for a single IP)
             let (allowed_ip, cdir) = if parts.len() == 2 {
                 (parts[0], parts[1])
             } else if parts.len() == 1 {
@@ -379,10 +368,14 @@ pub async fn sender_policy_framework<B>(
                 .fold(0, |acc, part| (acc << 8) + part);
 
             // Create the mask
-            let cdir_num = match cdir.parse::<u32>() {
+            let cdir_num = match cdir.parse::<u8>() {
                 Ok(num) => num,
                 Err(_) => continue,
             };
+
+            if cdir_num > 32 {
+                continue;
+            }
 
             // Create the mask
             let mask = (0xffffffff as u32) << (32 - cdir_num);
@@ -416,7 +409,7 @@ pub async fn sender_policy_framework<B>(
             // Split the IP/CIDR
             let parts = ipv6.split("/").collect::<Vec<&str>>();
 
-            // Check if the IP is valid
+            // Get the allowed_ip and cdir part, isn't a cdir part then 128 is default (that is for a single IP)
             let (allowed_ip, cdir) = if parts.len() == 2 {
                 (parts[0], parts[1])
             } else if parts.len() == 1 {
@@ -431,6 +424,10 @@ pub async fn sender_policy_framework<B>(
                 Ok(num) => num,
                 Err(_) => continue,
             };
+
+            if cidr_num > 128 {
+                continue;
+            }
 
             // Parse the allowed IP into segments
             let allowed_ip_segments: Vec<u16> = allowed_ip
@@ -481,7 +478,7 @@ pub async fn sender_policy_framework<B>(
         // If the policy is Aggresive and the IP is on the list then return true
         (SPFRecordAll::Aggresive, Some(_)) => Ok((true, record, matched_allowed_ip_pattern)),
         // If the policy is Aggresive and the IP is not on the list then return an error
-        (SPFRecordAll::Aggresive, None) => Err(SMTPError::SPFError("IP not allowed".to_string())),
+        (SPFRecordAll::Aggresive, None) => Err(Error::SPFError("IP not allowed".to_string())),
         // If the policy is Passive and the IP is on the list then return true
         (SPFRecordAll::Passive, Some(_)) => Ok((true, record, matched_allowed_ip_pattern)),
         // If the policy is Passive and the IP is not on the list then return false

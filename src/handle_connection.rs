@@ -28,7 +28,14 @@ pub async fn handle_connection_with_timeout<B>(
 ) where
     B: 'static + Default + Send + Sync + Clone,
 {
+    // Dispatch on_conn controller (if exists)
+    if let Some(on_conn) = &controllers.on_conn {
+        let on_conn = on_conn.0.clone();
+        on_conn(mutex_con.clone());
+    }
+
     let mutex_conn_for_handle_connection = mutex_con.clone();
+    // Start the main loop for handling the connection with a max session duration
     match timeout(
         max_session_duration,
         handle_connection(

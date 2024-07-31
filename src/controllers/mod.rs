@@ -3,6 +3,10 @@
 /// This module contains all the controllers for the SMTP server.
 /// The controllers are responsible for handling the commands and data from the client in a custom way.
 
+/// # on_conn
+/// 
+/// This module contains the controller for the connection, usually used to handle the connection.
+pub mod on_conn;
 /// # on_auth
 /// 
 /// This module contains the controller for the AUTH command, usually used to authenticate the client.

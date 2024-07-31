@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use crate::{
     client_message::ClientMessage,
     connection::{SMTPConnection, SMTPConnectionStatus},
-    errors::SMTPError,
+    errors::Error,
     mail::EmailAddress,
     message::Message,
     server::Controllers,
@@ -107,43 +107,43 @@ impl Commands {
     /// # Parse MAIL Command Data
     /// 
     /// This function parses the data from the MAIL command.
-    pub fn parse_mail_command_data(data: String) -> Result<EmailAddress, SMTPError> {
+    pub fn parse_mail_command_data(data: String) -> Result<EmailAddress, Error> {
         // Trim any leading or trailing whitespace
         let data = data.trim();
 
         // Extract the part between '<' and '>'
         let start = data
             .find('<')
-            .ok_or(SMTPError::ParseError("Invalid email address".to_string()))?;
+            .ok_or(Error::ParseError("Invalid email address".to_string()))?;
         let end = data
             .find('>')
-            .ok_or(SMTPError::ParseError("Invalid email address".to_string()))?;
+            .ok_or(Error::ParseError("Invalid email address".to_string()))?;
 
         // Extract and trim the email address part
         let email_address = &data[start + 1..end];
         EmailAddress::from_string(email_address)
-            .map_err(|_| SMTPError::ParseError("Invalid email address".to_string()))
+            .map_err(|_| Error::ParseError("Invalid email address".to_string()))
     }
 
     /// # Parse RCPT Command Data
     /// 
     /// This function parses the data from the RCPT command.
-    pub fn parse_rcpt_command_data(data: String) -> Result<EmailAddress, SMTPError> {
+    pub fn parse_rcpt_command_data(data: String) -> Result<EmailAddress, Error> {
         // Trim any leading or trailing whitespace
         let data = data.trim();
 
         // Extract the part between '<' and '>'
         let start = data
             .find('<')
-            .ok_or(SMTPError::ParseError("Invalid email address".to_string()))?;
+            .ok_or(Error::ParseError("Invalid email address".to_string()))?;
         let end = data
             .find('>')
-            .ok_or(SMTPError::ParseError("Invalid email address".to_string()))?;
+            .ok_or(Error::ParseError("Invalid email address".to_string()))?;
 
         // Extract and trim the email address part
         let email_address = &data[start + 1..end];
         EmailAddress::from_string(email_address)
-            .map_err(|_| SMTPError::ParseError("Invalid email address".to_string()))
+            .map_err(|_| Error::ParseError("Invalid email address".to_string()))
     }
 }
 
@@ -156,7 +156,7 @@ pub async fn handle_command<B>(
     client_message: &mut ClientMessage<String>,
     allowed_commands: Vec<Commands>,
     max_size: usize,
-) -> Result<(Vec<Message>, SMTPConnectionStatus), SMTPError>
+) -> Result<(Vec<Message>, SMTPConnectionStatus), Error>
 where
     B: 'static + Default + Send + Sync + Clone,
 {
@@ -168,7 +168,7 @@ where
         .find(|&cmd| cmd == &client_message.command)
         .is_none()
     {
-        return Err(SMTPError::UnknownCommand(client_message.command.clone()));
+        return Err(Error::UnknownCommand(client_message.command.clone()));
     }
 
     let result = match client_message.command {

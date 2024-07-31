@@ -1,4 +1,4 @@
-use crate::{connection::SMTPConnection, errors::SMTPError};
+use crate::{connection::SMTPConnection, errors::Error, mail::EmailAddress};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use trust_dns_resolver::TokioAsyncResolver;
@@ -93,11 +93,11 @@ pub struct DMARCRecord {
     /// # aggregate_report_email
     /// 
     /// The email to send the aggregate reports
-    pub aggregate_report_email: Option<String>, // The email to send the aggregate reports
+    pub aggregate_report_email: Option<EmailAddress>, // The email to send the aggregate reports
     /// # forensic_report_email
     /// 
     /// The email to send the forensic reports
-    pub forensic_report_email: Option<String>,  // The email to send the forensic reports
+    pub forensic_report_email: Option<EmailAddress>,  // The email to send the forensic reports
 
     /// # dkim_alignment
     /// 
@@ -132,8 +132,8 @@ impl DMARCRecord {
     pub fn new(
         version: String,
         policy: DMARCPolicy,
-        aggregate_report_email: Option<String>,
-        forensic_report_email: Option<String>,
+        aggregate_report_email: Option<EmailAddress>,
+        forensic_report_email: Option<EmailAddress>,
         dkim_alignment: Option<DMARCDKIMAlignment>,
         spf_alignment: Option<DMARCSPFAlignment>,
         report_format: Option<String>,
@@ -156,19 +156,19 @@ impl DMARCRecord {
     /// # from_string
     ///
     /// Parse a DNS DMARC record to a DMARCRecord struct
-    pub fn from_string(record: &str) -> Result<Self, SMTPError> {
+    pub fn from_string(record: &str) -> Result<Self, Error> {
         // Split the record by spaces
         let record = record.split(";").collect::<Vec<&str>>();
         // Remove trailing spaces
         let record = record.iter().map(|s| s.trim()).collect::<Vec<&str>>();
         // Check if the record has at least 2 elements
         if record.len() < 2 {
-            return Err(SMTPError::DKIMError("Invalid DMARC record".to_string()));
+            return Err(Error::DKIMError("Invalid DMARC record".to_string()));
         }
 
         // Check if the version is v=dkim1
         if record[0] != "v=dmarc1" && record[0] != "v=DMARC1" {
-            return Err(SMTPError::DKIMError("Invalid DKIM version".to_string()));
+            return Err(Error::DKIMError("Invalid DKIM version".to_string()));
         }
 
         let mut version = String::new();
@@ -190,14 +190,14 @@ impl DMARCRecord {
                     "none" => DMARCPolicy::None,
                     "quarantine" => DMARCPolicy::Quarantine,
                     "reject" => DMARCPolicy::Reject,
-                    _ => return Err(SMTPError::DKIMError("Invalid DMARC policy".to_string())),
+                    _ => return Err(Error::DKIMError("Invalid DMARC policy".to_string())),
                 };
             } else if record.starts_with("rua=") {
                 // Get the mailto:email part
                 let mailto = record.replace("rua=", "");
                 // Check if the email starts with mailto:
                 if !mailto.starts_with("mailto:") {
-                    return Err(SMTPError::DKIMError(
+                    return Err(Error::DKIMError(
                         "Invalid DMARC aggregate report email".to_string(),
                     ));
                 }
@@ -205,39 +205,36 @@ impl DMARCRecord {
                 // Get the email
                 let email = mailto.split(":").collect::<Vec<&str>>()[1];
                 // Check if the email is valid
-                if email.len() > 255 {
-                    return Err(SMTPError::DKIMError(
-                        "Invalid DMARC forensic report email".to_string(),
-                    ));
-                }
+                let email = EmailAddress::from_string(email).map_err(|_| {
+                    Error::DKIMError("Invalid DMARC aggregate report email".to_string())
+                })?;
+
                 // Set the email
-                aggregate_report_email = Some(email.to_string());
+                aggregate_report_email = Some(email);
             } else if record.starts_with("ruf=") {
                 // Get the mailto:email part
                 let mailto = record.replace("ruf=", "");
                 // Check if the email starts with mailto:
                 if !mailto.starts_with("mailto:") {
-                    return Err(SMTPError::DKIMError(
+                    return Err(Error::DKIMError(
                         "Invalid DMARC forensic report email".to_string(),
                     ));
                 }
                 // Get the email
                 let email = mailto.split(":").collect::<Vec<&str>>()[1];
                 // Check if the email is valid
-                if email.len() > 255 {
-                    return Err(SMTPError::DKIMError(
-                        "Invalid DMARC forensic report email".to_string(),
-                    ));
-                }
+                let email = EmailAddress::from_string(email).map_err(|_| {
+                    Error::DKIMError("Invalid DMARC aggregate report email".to_string())
+                })?;
                 // Set the email
-                forensic_report_email = Some(email.to_string());
+                forensic_report_email = Some(email);
             } else if record.starts_with("adkim=") {
                 // Get the DKIM alignment
                 dkim_alignment = match record.replace("adkim=", "").to_lowercase().as_str() {
                     "r" => Some(DMARCDKIMAlignment::Relaxed),
                     "s" => Some(DMARCDKIMAlignment::Strict),
                     _ => {
-                        return Err(SMTPError::DKIMError(
+                        return Err(Error::DKIMError(
                             "Invalid DMARC DKIM alignment".to_string(),
                         ))
                     }
@@ -248,7 +245,7 @@ impl DMARCRecord {
                     "r" => Some(DMARCSPFAlignment::Relaxed),
                     "s" => Some(DMARCSPFAlignment::Strict),
                     _ => {
-                        return Err(SMTPError::DKIMError(
+                        return Err(Error::DKIMError(
                             "Invalid DMARC SPF alignment".to_string(),
                         ))
                     }
@@ -260,14 +257,14 @@ impl DMARCRecord {
                     record
                         .replace("pct=", "")
                         .parse::<u8>()
-                        .map_err(|_| SMTPError::DKIMError("Invalid DMARC percentage".to_string()))?,
+                        .map_err(|_| Error::DKIMError("Invalid DMARC percentage".to_string()))?,
                 );
             } else if record.starts_with("ri=") {
                 report_interval = Some(
                     record
                         .replace("ri=", "")
                         .parse::<u32>()
-                        .map_err(|_| SMTPError::DKIMError("Invalid DMARC report interval".to_string()))?,
+                        .map_err(|_| Error::DKIMError("Invalid DMARC report interval".to_string()))?,
                 );
             }
         }
@@ -292,14 +289,14 @@ impl DMARCRecord {
     pub async fn get_dns_dmarc_record(
         dns_resolver: Arc<Mutex<TokioAsyncResolver>>,
         for_domain: &str,
-    ) -> Result<Self, SMTPError> {
+    ) -> Result<Self, Error> {
         // Lock the DNS resolver
         let dns_resolver_guarded = dns_resolver.lock().await;
         // Get the DMARC record from the DNS
         let txt_records = dns_resolver_guarded
             .txt_lookup(format!("{}.", for_domain).as_str())
             .await
-            .map_err(|_| SMTPError::DNSError("Failed to get DMARC record".to_string()))?;
+            .map_err(|_| Error::DNSError("Failed to get DMARC record".to_string()))?;
 
         // Find the DMARC record for DMARC policy
         let dmarc_record = txt_records.iter().find(|record| {
@@ -307,7 +304,7 @@ impl DMARCRecord {
         });
 
         if dmarc_record.is_none() {
-            return Err(SMTPError::DKIMError("DMARC record not found".to_string()));
+            return Err(Error::DKIMError("DMARC record not found".to_string()));
         }
 
         let dmarc_record = dmarc_record.unwrap().to_string();
@@ -326,10 +323,15 @@ impl DMARCRecord {
 /// # dmarc
 ///
 /// Get DMARC Information
+/// 
+/// ## Arguments
+/// 
+/// * `conn` - The SMTP Connection
+/// * `for_domain` - The domain to get the DMARC record
 pub async fn get_dmarc<B>(
     conn: Arc<Mutex<SMTPConnection<B>>>,
     for_domain: &str,
-) -> Result<DMARCRecord, SMTPError> {
+) -> Result<DMARCRecord, Error> {
     let conn = conn.lock().await;
     let record = DMARCRecord::get_dns_dmarc_record(conn.dns_resolver.clone(), for_domain).await?;
     Ok(record)

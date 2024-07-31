@@ -6,6 +6,7 @@ use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::TokioAsyncResolver;
 
 use crate::controllers::on_auth::OnAuthController;
+use crate::controllers::on_conn::OnConnController;
 use crate::controllers::on_mail_cmd::OnMailCommandController;
 use crate::controllers::on_rcpt::OnRCPTCommandController;
 use crate::controllers::on_unknown_command::OnUnknownCommandController;
@@ -105,6 +106,8 @@ pub struct SMTPServer<B> {
 /// This struct is responsible for holding the controllers that will be used by the SMTPServer.
 #[derive(Debug)]
 pub struct Controllers<B> {
+    /// # on_conn controller
+    pub on_conn: Option<OnConnController<B>>,
     /// # on_auth controller
     pub on_auth: Option<OnAuthController<B>>,
     /// # on_email controller
@@ -130,6 +133,7 @@ where
 {
     fn clone(&self) -> Self {
         Controllers {
+            on_conn: self.on_conn.clone(),
             on_auth: self.on_auth.clone(),
             on_email: self.on_email.clone(),
             on_reset: self.on_reset.clone(),
@@ -157,6 +161,7 @@ impl<B> SMTPServer<B> {
             threads_pool: None,
             tls_acceptor: None,
             controllers: Controllers {
+                on_conn: None,
                 on_auth: None,
                 on_email: None,
                 on_reset: None,
@@ -232,6 +237,15 @@ impl<B> SMTPServer<B> {
     pub fn set_allowed_commands(&mut self, commands: Vec<Commands>) -> &mut Self {
         log::debug!("[📃] Setting allowed commands");
         self.allowed_commands = commands;
+        self
+    }
+
+    /// # on_conn
+    /// 
+    /// Set the OnConnController to be used when a connection is opened.
+    pub fn on_conn(&mut self, on_conn: OnConnController<B>) -> &mut Self {
+        log::debug!("[📃] Setting OnConnController");
+        self.controllers.on_conn = Some(on_conn);
         self
     }
 

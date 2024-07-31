@@ -1,6 +1,6 @@
 use std::str::from_utf8;
 
-use crate::errors::SMTPError;
+use crate::errors::Error;
 
 use super::headers::EmailHeaders;
 use hashbrown::HashMap;
@@ -19,7 +19,7 @@ use hashbrown::HashMap;
 /// ```rust
 /// use neo_email::mail::Mail;
 /// 
-/// let raw_email = b"From: jean@nervio\nSubject: Hello\n\nHello, World!";
+/// let raw_email = b"From: Jean<jean@nervio.com>\nSubject: Hello\n\nHello, World!";
 /// let mail = Mail::<Vec<u8>>::from_bytes(raw_email.to_vec()).unwrap();
 /// ```
 #[derive(Debug, PartialEq, Eq)]
@@ -48,7 +48,7 @@ impl<T> Mail<T> {
     /// ```rust
     /// use neo_email::mail::Mail;
     /// 
-    /// let raw_email = b"From: jean@nervio\nSubject: Hello\n\nHello, World!";
+    /// let raw_email = b"From: Jean<jean@nervio.com>\nSubject: Hello\n\nHello, World!";
     /// let mail = Mail::<Vec<u8>>::from_bytes(raw_email.to_vec()).unwrap();
     /// ```
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Mail<T>, String>
@@ -104,8 +104,6 @@ impl<T> Mail<T> {
 /// This trait is implemented by Mail and is used to downcast the Mail struct.
 pub trait MailTrait: Send + Sync + 'static {
     /// # As Any
-    /// 
-    /// This function returns a reference to the dyn Any trait.
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
@@ -149,23 +147,32 @@ impl EmailAddress {
     /// # From String
     /// 
     /// This function creates a new EmailAddress from a string.
-    pub fn from_string(data: &str) -> Result<Self, SMTPError> {
+    pub fn from_string(data: &str) -> Result<Self, Error> {
         let mut parts = data.split('@');
         let username = parts
             .next()
-            .ok_or(SMTPError::ParseError("Invalid email address".to_string()))?
+            .ok_or(Error::ParseError("Invalid email address".to_string()))?
             .to_owned();
+
+        if username.is_empty() {
+            return Err(Error::ParseError("Invalid email address".to_string()));
+        }
+
+        if username.len() > 64 {
+            return Err(Error::ParseError("Invalid email address".to_string()));
+        }
+
         let domain = parts
             .next()
-            .ok_or(SMTPError::ParseError("Invalid email address".to_string()))?
+            .ok_or(Error::ParseError("Invalid email address".to_string()))?
             .to_owned();
 
         if domain.is_empty() {
-            return Err(SMTPError::ParseError("Invalid email address".to_string()));
+            return Err(Error::ParseError("Invalid email address".to_string()));
         }
 
         if domain.len() > 253 {
-            return Err(SMTPError::ParseError("Invalid email address".to_string()));
+            return Err(Error::ParseError("Invalid email address".to_string()));
         }
 
         Ok(EmailAddress { username, domain })
