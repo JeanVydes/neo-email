@@ -1,3 +1,6 @@
+/// # DKIM
+/// 
+/// This module contains the DomainKeys Identified Mail. (Not implemented yet)
 //#[cfg(feature = "dkim-experimental")]
 //pub mod dkim;
 

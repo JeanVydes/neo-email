@@ -1,3 +1,12 @@
+/// # DKIM
+/// 
+/// This module contains the DKIM implementation.
+/// DKIM is used to verify the authenticity of the email.
+/// It uses a public key to verify the signature of the email.
+/// 
+/// Note: This module is not implemented yet.
+
+/*
 use crate::{connection::SMTPConnection, errors::SMTPError};
 use base64::prelude::*;
 use openssl::{pkey::PKey, rsa::Rsa, sign::Verifier};
@@ -252,3 +261,4 @@ impl DKIMHeader {
         )
     }
 }
+*/
