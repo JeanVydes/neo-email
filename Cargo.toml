@@ -23,7 +23,7 @@ trust-dns-resolver = "0.23.2"
 sha1 = { version = "0.10", optional = true }
 sha2 = { version = "0.10", optional = true }
 base64 = { version = "0.22", optional = true }
-openssl = "0.10.66"
+openssl = { version = "0.10", optional = true }
 
 [features]
 # Some email headers are experiemental, more information: https://www.iana.org/assignments/message-headers/message-headers.xhtml
@@ -36,7 +36,8 @@ spf-experimental = []
 dkim-experimental = [
     "sha1",
     "sha2",
-    "base64"
+    "base64",
+    "openssl"
 ]
 
 utilities-experimental = [
